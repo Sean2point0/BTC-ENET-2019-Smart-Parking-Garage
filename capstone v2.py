@@ -40,7 +40,7 @@ def checkIn():
             print("\nYou have selected location number {}.".format(select))
             print("Generating parking pass...")
             locDict[select] = str(random.randint(10000000, 99999999))
-            print("Your parking pass confirmation number is now {}.".format(locDict[select]))
+            print("Your parking pass confirmation number is {}.".format(locDict[select]))
             if queryYesNo("Would you like us to email/text you your confirmation number?"):
                 sendConfirmation(locDict[select])
             saveLoc()
@@ -171,7 +171,7 @@ def menu():
                "create user",
                "delete user",
                "resend confirmation",
-               "exit program"]
+               "log out"]
     print("\n===================| MENU |====================")
     print("|                                             |")
     for count, option in enumerate(options, 1):
@@ -197,10 +197,9 @@ def queryYesNo(question):
             sys.stdout.write("Please respond with 'yes' or 'no' "
                              "(or 'y' or 'n').\n")
 
-def exitProgram():
-    print("exiting program...")
+def logOut():
+    print("logging out...")
 
-#Main routine, including options menu
 def startRoutine():
 
     """Handles all input choices from the parking attendant for parking
@@ -211,7 +210,7 @@ def startRoutine():
                    "3": createUser,
                    "4": deleteUser,
                    "5": resendConfirmation,
-                   "6": exitProgram}
+                   "6": logOut}
     
     if len([val for val in locDict.values() if val != "0"]) == len(locDict):
         print("\nNO VACANCY: Check-in currently unavailable.")
@@ -229,11 +228,11 @@ def startRoutine():
             dictChoices[userChoice]()
     else:
         print("that is not a valid option")
-    if dictChoices[userChoice] != exitProgram:
+    if dictChoices[userChoice] != logOut:
         if queryYesNo("\nContinue?"):
             startRoutine()
         else:
-            exitProgram()
+            logOut()
 
 def createUser():
 
@@ -272,20 +271,41 @@ def saveUsers():
 def main():
 
     """Start of program. Initializes information from CSV files to dictionaries
-       and then calls the startRoutine() function to begin operation"""
+       on first run."""
+    loginAttempts = 3
     
-    with open('/home/pi/Documents/ENET_Capstone/parking_database.csv', mode='r') as infile:
-        reader = csv.reader(infile)
-        for rows in reader:
-           locDict[rows[0]] = rows[1]
-    with open('/home/pi/Documents/ENET_Capstone/users.csv', mode='r') as userInfile:
-        userReader = csv.reader(userInfile)
-        for rows in userReader:
-            userDict[rows[0]] = rows[1]
+    if not locDict:
+        with open('/home/pi/Documents/ENET_Capstone/parking_database.csv', mode='r') as infile:
+            reader = csv.reader(infile)
+            for rows in reader:
+               locDict[rows[0]] = rows[1]
+    if not userDict:
+        with open('/home/pi/Documents/ENET_Capstone/users.csv', mode='r') as userInfile:
+            userReader = csv.reader(userInfile)
+            for rows in userReader:
+                userDict[rows[0]] = rows[1]
             
     print(locDict)
     print(userDict)
-    startRoutine()
+
+    if userDict:
+        while loginAttempts > 0:
+            username = input("Username: ")
+            password = getpass.getpass()
+            if username in userDict.keys() and userDict[username] == password:
+                startRoutine()
+                break
+            else:
+                loginAttempts -= 1
+                print("invalid username or password. {} tries remaining".format(loginAttempts))
+        if loginAttempts > 0:
+            if queryYesNo("Would you like to log in as a different user? "):
+                main()
+        else:
+            print("You have exceeded the maximum number of login attempts.")
+    else:
+        startRoutine()
+    print("exiting program...")
 
 if __name__ == "__main__":
     main()
