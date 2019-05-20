@@ -1,63 +1,177 @@
 import csv
 import random
-import numpy
-import codecs
 import serial
 import sys
 import getpass
 from collections import OrderedDict
+from bluepy.btle import Scanner, DefaultDelegate, Peripheral
+import time
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
-loc_dict = OrderedDict()
-user_dict = OrderedDict()
+locDict = OrderedDict()
+userDict = OrderedDict()
+SMSCarriers = OrderedDict()
 
-#function for RPi to communicate serially with Arduino
-def arduino_com():
+
+def arduinoCom():
+
+    """function for RPi to communicate serially with Arduino"""
+
     ser = serial.Serial('/dev/ttyACM0')
     while 1:
         n = input('Enter a number of times for the led to flash: ')
         ser.write(n)
-        print(string)
 
-#function for selecting parking location and receiving location password
-def check_in():
+def checkIn():
+
+    """function for selecting parking location and receiving location password"""
+
     print("\nCheck-in selected")
     while True:
         print("vacant locations: ")
-        for key, value in loc_dict.items():
+        for key, value in locDict.items():
             if value == '0':
                 print(key)
         select = input("Please select a location: ")
-        if select in loc_dict.keys() and int(loc_dict.get(select)) == 0:
+        
+        if select in locDict.keys() and int(locDict.get(select)) == 0:
             print("\nYou have selected location number {}.".format(select))
             print("Generating parking pass...")
-            loc_dict[select] = random.randint(10000000, 99999999)
-            print("The key value for location {} is now {}.".format(select, loc_dict[select]))
-            save_loc()
+            locDict[select] = str(random.randint(10000000, 99999999))
+            print("Your parking pass confirmation number is now {}.".format(locDict[select]))
+            if queryYesNo("Would you like us to email/text you your confirmation number?"):
+                sendConfirmation(locDict[select])
+            saveLoc()
             break
+        
         print("\nInvalid. Parking location is occupied or non-existant.")
 
-#function to prompt for location password to retrieve vehicle / vacate location
-def check_out():
+
+def checkOut():
+
+    """function to prompt for location password to retrieve vehicle / vacate location"""
+    
     print("\nCheck-out selected.")
-    select_o = int(input("Please enter parking pass to retrieve vehicle: "))
-    for key, value in loc_dict.items():
-        if select_o == int(value):          
+    selectO = input("Please enter parking pass confirmation number to retrieve vehicle: ")
+    for key, value in locDict.items():
+        if selectO == value:          
             print("\nRetrieving vehicle from location {}.".format(key))
             print("Location {} is now vacant.".format(key))
-            loc_dict[key] = '0'
-            save_loc()
+            locDict[key] = '0'
+            saveLoc()
             break
     else:
         print("Parking pass is invalid.")
 
-def save_loc():
+def saveLoc():
     with open('/home/pi/Documents/ENET_Capstone/parking_database.csv', mode='w') as outfile:
         writer = csv.writer(outfile)
-        for key, value in loc_dict.items():
+        for key, value in locDict.items():
            writer.writerow([key, value])
 
-def menu_vis():
-    options = ["check in", "check out", "create user", "delete user", "exit program"]
+def sendConfirmation(ConfirmationNum):
+
+    """Sends the ConfirmationNum to the user-provided mobile number or email via STMP
+
+       NOTE - if sending to a mobile phone the parking garage email must be whitelisted
+       by the text recipient prior to sending or else the email will be blocked."""
+    
+    garageEmail = "petersparkingpalace@gmail.com"
+    
+    if not SMSCarriers:
+        carrierInfo =[["AT&T", "txt.att.net"],
+                      ["Sprint", "messaging.sprintpcs.com"],
+                      ["T-Mobile", "tmomail.net"],
+                      ["Verizon", "vtext.com"],
+                      ["Other", ""]]
+        for count, carrier in enumerate(carrierInfo, 1):
+            SMSCarriers[str(count)] = carrier
+            
+    if queryYesNo("Will this email be sent to a mobile device?"):
+        while True:
+            phoneNum = input("Enter phone number: ")
+            if len(phoneNum) == 10:
+                if queryYesNo("You entered {}. Is this correct?".format(phoneNum)):
+                    break
+            else:
+                print("That is not a valid number. Please provide a 10 digit number")
+                
+        while True:
+            for count, carrier in enumerate(SMSCarriers.values(), 1):
+                print("({}) {}".format(count, carrier[0]))
+            phoneCarrier = input("Choose a carrier: ")
+            if phoneCarrier in SMSCarriers.keys():
+                if SMSCarriers[phoneCarrier][0] == "T-Mobile":
+                    phoneNum = "1" + phoneNum
+                break
+            print("That is not a valid choice")
+            
+        if phoneCarrier != "5":
+            emailDomain = SMSCarriers[phoneCarrier][1]
+            customerEmail = "{}@{}".format(phoneNum, emailDomain)
+        else:
+            customerEmail = ""
+    else:
+        while True:
+            customerEmail = input("Enter email address: ")
+            if queryYesNo("You entered {}. Is this correct?".format(customerEmail)):
+                break
+            
+    if len(customerEmail) > 0:
+        if queryYesNo("Ready to send. Confirm?"):
+            msg = MIMEMultipart()
+            msg["From"] = garageEmail
+            msg["To"] = customerEmail
+            msg["Subject"] = "Peter's Parking Palace Confirmation"
+            body = "Thank you for choosing Peter's Parking Palace." +\
+                  "Your confirmation Number is: {}".format(ConfirmationNum)
+            msg.attach(MIMEText(body, "plain"))
+            server = smtplib.SMTP('smtp.gmail.com', 587)
+            server.ehlo
+            server.starttls()
+            try:
+                password = getpass.getpass("enter parking garage email password: ")
+                server.login(garageEmail, password)
+                server.sendmail(garageEmail, customerEmail, msg.as_string())
+                server.quit()
+                print("email sent\n")
+            except Exception as e:
+                print("Something went wrong")
+                print(e)
+        else:
+            print("email not sent\n")
+    else:
+        print("We are unable to send a message to that address/carrier")
+
+def resendConfirmation():
+    currentCars = [key for key in locDict.keys() if locDict[key] != "0"]
+    if currentCars:
+        while True:
+            for count, car in enumerate(currentCars, 1):
+                print("({}) parking space {}".format(count, car))
+            chosenCar = input("choose a car to resend confirmation email to: ")
+            if chosenCar in locDict.keys() and locDict[chosenCar] != "0":
+                break
+            if not queryYesNo("That is not a valid option. continue? "):
+                chosenCar = ""
+                break
+        if chosenCar:
+            sendConfirmation(locDict[chosenCar])
+    else:
+        print("There are no cars currently parked")
+
+def menu():
+
+    """ Displays the menu options for the program"""
+    
+    options = ["check in",
+               "check out",
+               "create user",
+               "delete user",
+               "resend confirmation",
+               "exit program"]
     print("\n===================| MENU |====================")
     print("|                                             |")
     for count, option in enumerate(options, 1):
@@ -65,101 +179,113 @@ def menu_vis():
     print("|                                             |")
     print("===============================================")
         
-def query_yes_no(question, default="yes"):
-    """Ask a yes/no question via raw_input() and return their answer.
-
+def queryYesNo(question):
+    
+    """Ask a yes/no question via input() and return their answer.
     "question" is a string that is presented to the user.
-    "default" is the presumed answer if the user just hits <Enter>.
-        It must be "yes" (the default), "no" or None (meaning
-        an answer is required of the user).
-
     The "answer" return value is True for "yes" or False for "no".
     """
     valid = {"yes": True, "y": True, "ye": True,
              "no": False, "n": False}
-    if default is None:
-        prompt = " [y/n] "
-    elif default == "yes":
-        prompt = " [Y/n] "
-    elif default == "no":
-        prompt = " [y/N] "
-    else:
-        raise ValueError("invalid default answer: '%s'" % default)
+    
     while True:
-        sys.stdout.write(question + prompt)
+        sys.stdout.write(question + "[y/n]")
         choice = input().lower()
-        if default is not None and choice == '':
-            return valid[default]
-        elif choice in valid:
+        if choice in valid:
             return valid[choice]
         else:
             sys.stdout.write("Please respond with 'yes' or 'no' "
                              "(or 'y' or 'n').\n")
 
-def exit_program():
+def exitProgram():
     print("exiting program...")
 
 #Main routine, including options menu
-def start_routine():
-    dict_choices = {"1": check_in, "2": check_out, "3": create_user, "4": delete_user, "5": exit_program}
-    if len([val for val in loc_dict.values() if val != "0"]) == len(loc_dict):
+def startRoutine():
+
+    """Handles all input choices from the parking attendant for parking
+       garage functions and operations"""
+    
+    dictChoices = {"1": checkIn,
+                   "2": checkOut,
+                   "3": createUser,
+                   "4": deleteUser,
+                   "5": resendConfirmation,
+                   "6": exitProgram}
+    
+    if len([val for val in locDict.values() if val != "0"]) == len(locDict):
         print("\nNO VACANCY: Check-in currently unavailable.")
-        print(loc_dict.values())
+        print(locDict.values())
         vacancy = False
     else:
         vacancy = True
-    menu_vis()
-    in_out = input("\nPlease make a selection from the MENU: ")
-    if in_out in dict_choices.keys():
-        if in_out == "1" and not vacancy:
+        
+    menu()
+    userChoice = input("\nPlease make a selection from the MENU: ")
+    if userChoice in dictChoices.keys():
+        if dictChoices[userChoice] == checkIn and not vacancy:
             print("\nNo vacancy. Unable to check in new customers at this time.")
         else:
-            dict_choices[in_out]()
+            dictChoices[userChoice]()
     else:
         print("that is not a valid option")
-    if in_out != "5":
-        if query_yes_no("\nContinue?", None):
-            start_routine()
+    if dictChoices[userChoice] != exitProgram:
+        if queryYesNo("\nContinue?"):
+            startRoutine()
         else:
-            exit_program()
+            exitProgram()
 
-def create_user():
+def createUser():
+
+    """Adds an authorized user to the database"""
+    
     username = None
     print("\n'Create user' selected.")
     username = input("Enter your new username: ")
     password = getpass.getpass("Enter your new password (input is hidden): ")
-    user_dict[username] = password
-    print(user_dict)
-    if query_yes_no("\nCreate another user?", None):
-        create_user()
+    userDict[username] = password
+    print(userDict)
+    if queryYesNo("\nCreate another user?"):
+        createUser()
     else:
-        save_users()
+        saveUsers()
 
-def delete_user():
+def deleteUser():
+
+    """Deletes an authorized user from the database"""
+    
     username = None
     print("\n'Delete user' selected.")
     username = input("Enter username to delete: ")
-    user_dict.pop(username, None)
+    userDict.pop(username, None)
     print(username + "'s account has been deleted.")
-    save_users()
+    saveUsers()
 
-def save_users():
-    write_u = csv.writer(open('/home/pi/Documents/ENET_Capstone/users.csv', 'w'))
-    for key, value in user_dict.items():
-        write_u.writerow([key, value])
+def saveUsers():
+
+    """Updates csv file of valid users"""
+    
+    writeUsers = csv.writer(open('/home/pi/Documents/ENET_Capstone/users.csv', 'w'))
+    for key, value in userDict.items():
+        writeUsers.writerow([key, value])
 
 def main():
+
+    """Start of program. Initializes information from CSV files to dictionaries
+       and then calls the startRoutine() function to begin operation"""
+    
     with open('/home/pi/Documents/ENET_Capstone/parking_database.csv', mode='r') as infile:
         reader = csv.reader(infile)
         for rows in reader:
-           loc_dict[rows[0]] = rows[1]
-    with open('/home/pi/Documents/ENET_Capstone/users.csv', mode='r') as u_infile:
-        u_reader = csv.reader(u_infile)
-        for rows in u_reader:
-            user_dict[rows[0]] = rows[1]
-    print(loc_dict)
-    print(user_dict)
-    start_routine()
+           locDict[rows[0]] = rows[1]
+    with open('/home/pi/Documents/ENET_Capstone/users.csv', mode='r') as userInfile:
+        userReader = csv.reader(userInfile)
+        for rows in userReader:
+            userDict[rows[0]] = rows[1]
+            
+    print(locDict)
+    print(userDict)
+    startRoutine()
 
 if __name__ == "__main__":
     main()
