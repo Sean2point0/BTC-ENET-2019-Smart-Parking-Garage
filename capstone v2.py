@@ -92,8 +92,6 @@ class CarInfo:
         self.scanEntry = scanEntry
         self.__name = self.scanEntry.getValueText(9)
         self.__MAC = self.scanEntry.addr
-        self.__parkingSpot = spot
-        self.__confirmation = confirmNum
         self.done = False
 
     @property
@@ -104,17 +102,6 @@ class CarInfo:
     def MAC(self):
         return self.__MAC
 
-    @property
-    def spot(self):
-        return self._parkingSpot
-
-    @property
-    def spot(self):
-        return self.__parkingSpot
-
-    @property
-    def confirmation(self):
-        return self.__confirmation
 #2.0's code ends here
 ################################################################################
 """
