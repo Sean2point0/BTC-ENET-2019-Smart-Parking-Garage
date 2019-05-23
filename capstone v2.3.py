@@ -165,6 +165,7 @@ def checkOut():
             allParkingSpots[key] = parkingSpot(dictBlankSpot)
             print("Location {} is now vacant.".format(key))
             saveLoc()
+
             break
     else:
         print("Parking pass is invalid.")
@@ -451,4 +452,3 @@ def main():
 if __name__ == "__main__":
     print("Welcome to Peter's Parking Party Palace")
     main()
-
