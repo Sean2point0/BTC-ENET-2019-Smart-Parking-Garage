@@ -10,10 +10,10 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-locDict = OrderedDict()
-# parkedCars = OrderedDict()
+allParkingSpots = OrderedDict()
 userDict = OrderedDict()
 SMSCarriers = OrderedDict()
+
 """
 # 2.0's code starts here
 #############################################################
@@ -86,25 +86,28 @@ def carConnect(scanEntry):
     p.disconnect()
     print("finished for now\n")
 
-class CarInfo:
-
-    def __init__(self, scanEntry):
-        self.scanEntry = scanEntry
-        self.__name = self.scanEntry.getValueText(9)
-        self.__MAC = self.scanEntry.addr
-        self.done = False
-
-    @property
-    def name(self):
-        return self.__name
-
-    @property
-    def MAC(self):
-        return self.__MAC
-
-#2.0's code ends here
-################################################################################
 """
+class parkingSpot:
+
+    allowedAttributes = []
+
+    def __init__(self, dictAttributes):
+        for key, value in dictAttributes.items():
+            if key is not None and value is not None:
+                setattr(self, key, value)
+
+    def dictforcsv(self):
+        dictSpot = {}
+        for attr in parkingSpot.allowedAttributes:
+            dictSpot[attr] = getattr(self, attr, "0")
+        return dictSpot
+    
+    def __str__(self):
+        string = ""
+        for key in parkingSpot.allowedAttributes:
+            if key in self.__dict__:
+                string += "\n{: <12}: {}".format(key, getattr(self, key, "0"))
+        return string
 
 
 def arduinoCom():
@@ -121,22 +124,27 @@ def checkIn():
 
     """function for selecting parking location and receiving
        location password"""
-
     print("\nCheck-in selected")
+    print("connecting to car")
+    carAttr = ["0", "Car1", "0000000020", time.time(), "0"]
+    dictCar = dict(zip(parkingSpot.allowedAttributes, carAttr))
+    newCar = parkingSpot(dictCar)
     while True:
         print("vacant locations: ")
-        for key, value in locDict.items():
-            if value == '0':
+        for key, value in allParkingSpots.items():
+            if value.MAC == '0':
                 print(key)
-        select = input("Please select a location: ")
-        if select in locDict.keys() and int(locDict.get(select)) == 0:
-            print("\nYou have selected location number {}.".format(select))
+        selectSpot = input("Please select a location: ")
+        if selectSpot in allParkingSpots.keys() and int(allParkingSpots[selectSpot].MAC) == 0:
+            print("\nYou have selected location number {}.".format(selectSpot))
             print("Generating parking pass...")
-            locDict[select] = str(random.randint(10000000, 99999999))
-            print("Your confirmation number is {}.".format(locDict[select]))
-            if queryYesNo("Would you like an email or text confirmation? "):
-                sendConfirmation(locDict[select])
+            newCar.Spot = selectSpot
+            newCar.Confirmation = str(random.randint(10000000, 99999999))
+            print("Your confirmation number is {}.".format(newCar.Confirmation))
+            allParkingSpots[selectSpot] = newCar
             saveLoc()
+            if queryYesNo("Would you like an email or text confirmation? "):
+                sendConfirmation(newCar.Confirmation)
             break
         print("\nInvalid. Parking location is occupied or non-existant.")
 
@@ -147,24 +155,34 @@ def checkOut():
        and vacate location"""
 
     print("\nCheck-out selected.")
-    selectO = input("Please enter confirmation number to retrieve vehicle: ")
-    for key, value in locDict.items():
-        if selectO == value:
+    selectCar = input("Please enter confirmation number to retrieve vehicle: ")
+    for key, value in allParkingSpots.items():
+        if selectCar == value.Confirmation:
+            currentCar = allParkingSpots[key]
             print("\nRetrieving vehicle from location {}.".format(key))
+            blankSpot = [key, "0", "0", "0", "0", "0"]
+            dictBlankSpot = dict(zip(parkingSpot.allowedAttributes, blankSpot))
+            allParkingSpots[key] = parkingSpot(dictBlankSpot)
             print("Location {} is now vacant.".format(key))
-            locDict[key] = '0'
             saveLoc()
             break
     else:
         print("Parking pass is invalid.")
 
+def currentCars():
+    print("\nCurrent Customer Vehicles:")
+    for spot, carInfo in allParkingSpots.items():
+        print(str(carInfo))
+
 
 def saveLoc():
     fileLoc = '/home/pi/Documents/ENET_Capstone/parking_database.csv'
     with open(fileLoc, newline='', mode='w') as outfile:
-        writer = csv.writer(outfile)
-        for key, value in locDict.items():
-            writer.writerow([key, value])
+        fn = parkingSpot.allowedAttributes
+        writer = csv.DictWriter(outfile, fieldnames = fn)
+        writer.writeheader()
+        for Spot in allParkingSpots.values():
+            writer.writerow(Spot.dictforcsv())
 
 
 def sendConfirmation(ConfirmationNum):
@@ -251,19 +269,19 @@ def sendConfirmation(ConfirmationNum):
 
 
 def resendConfirmation():
-    currentCars = [key for key in locDict.keys() if locDict[key] != "0"]
+    currentCars = [car for car in allParkingSpots.values() if car.MAC != "0"]
     if currentCars:
         while True:
-            for count, car in enumerate(currentCars, 1):
-                print("({}) parking space {}".format(count, car))
+            for car in currentCars:
+                print(str(car))
             chosenCar = input("choose a car to resend confirmation email to: ")
-            if chosenCar in locDict.keys() and locDict[chosenCar] != "0":
+            if chosenCar in allParkingSpots.keys() and allParkingSpots[chosenCar].MAC != "0":
                 break
             if not queryYesNo("That is not a valid option. continue? "):
                 chosenCar = ""
                 break
         if chosenCar:
-            sendConfirmation(locDict[chosenCar])
+            sendConfirmation(allParkingSpots[chosenCar].Confirmation)
     else:
         print("There are no cars currently parked")
 
@@ -277,6 +295,7 @@ def menu():
                "create user",
                "delete user",
                "resend confirmation",
+               "check current vehicles",
                "log out"]
     print("\n===================| MENU |====================")
     print("|                                             |")
@@ -320,11 +339,11 @@ def startRoutine():
                    "3": createUser,
                    "4": deleteUser,
                    "5": resendConfirmation,
-                   "6": logOut}
-
-    if len([val for val in locDict.values() if val != "0"]) == len(locDict):
+                   "6": currentCars,
+                   "7": logOut}
+    numSpotsFull = [car for car in allParkingSpots.values() if car.MAC != "0"]
+    if len(numSpotsFull) == len(allParkingSpots):
         print("\nNO VACANCY: Check-in currently unavailable.")
-        print(locDict.values())
         vacancy = False
     else:
         vacancy = True
@@ -390,20 +409,22 @@ def main():
 
     loginAttempts = 3
 
-    if not locDict:
+    if not allParkingSpots:
         fileLoc = '/home/pi/Documents/ENET_Capstone/parking_database.csv'
         with open(fileLoc, newline='', mode='r') as infile:
-            reader = csv.reader(infile)
-            for rows in reader:
-                locDict[rows[0]] = rows[1]
+            reader = csv.DictReader(infile)
+            parkingSpot.allowedAttributes = reader.fieldnames
+            for count, rows in enumerate(reader, 1):
+                allParkingSpots[str(count)] = parkingSpot(rows)
     if not userDict:
         fileLoc = '/home/pi/Documents/ENET_Capstone/users.csv'
         with open(fileLoc, newline='', mode='r') as userInfile:
             userReader = csv.reader(userInfile)
             for rows in userReader:
                 userDict[rows[0]] = rows[1]
-
-    print(locDict)
+    for a in  allParkingSpots.keys():
+        spot = allParkingSpots[a]
+        print(spot.Spot, spot.Confirmation)
     print(userDict)
 
     if userDict:
@@ -430,3 +451,4 @@ def main():
 if __name__ == "__main__":
     print("Welcome to Peter's Parking Party Palace")
     main()
+
