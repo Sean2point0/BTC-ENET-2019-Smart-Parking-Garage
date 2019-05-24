@@ -5,7 +5,7 @@ import sys
 import getpass
 from collections import OrderedDict
 from bluepy.btle import Scanner, DefaultDelegate, Peripheral
-import time
+import datetime
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -131,7 +131,7 @@ def checkIn():
     car = BLE(defaultAddr = "0", defaultName = "0")
     car.newConnect()
     if car.addr != "0":
-        carAttr = ["0", car.name, car.addr, time.time(), "0"]
+        carAttr = ["0", car.name, car.addr, datetime.datetime.now(), "0"]
         dictCar = dict(zip(parkingSpot.allowedAttributes, carAttr))
         newCar = parkingSpot(dictCar)
         while True:
