@@ -14,79 +14,82 @@ allParkingSpots = OrderedDict()
 userDict = OrderedDict()
 SMSCarriers = OrderedDict()
 
-"""
-# 2.0's code starts here
-#############################################################
 class NotificationDelegate(DefaultDelegate):
 
-    def __init__(self, car):
+    def __init__(self):
         DefaultDelegate.__init__(self)
-        self.car = car
 
     def handleNotification(self, cHandle, data):
         try:
             msg = data.decode("utf-8")
             print("Notification recieved:")
-            print("From: {}".format(self.car.name))
-            print("MAC: {}".format(self.car.MAC))
             print("Msg: {}".format(msg))
             if msg == "d":
-                self.car.done = True
+                BLE.done = True
         except UnicodeDecodeError:
             print("Notification message not valid utf-8 format")
 
+class BLE:
 
-def newCar():
-    chosenCar = None
-    print("Scanning...\n")
-    scanner = Scanner()
-    scan = scanner.scan(2)
-    namedDevices = [x for x in scan if x.getValueText(9) != None]
-    while True:
-        if not namedDevices:
-            print("There are no cars in the area to connect to\n")
-            break
-        dictDevices = {}
-        for count, device in enumerate(namedDevices, 1):
-            dictDevices[count] = device
-            print("({}) name:     {}".format(count, device.getValueText(9)))
-            print("    MAC ID:   {}".format(device.addr))
-            print("    RSSI:     {} dB\n".format(device.rssi))
-        userChoice = input("Which car would you like to connect to?\n")
-        if not userChoice:
-            break
-        if int(userChoice) in dictDevices.keys():
-            chosenCar = dictDevices[int(userChoice)]
-            break
-        print("that is not a valid option. Please choose again\n")
-    if chosenCar:
-        carConnect(chosenCar)
+    done = False
 
-def carConnect(scanEntry):
-    print("Connecting to Car...\n")
-    if not scanEntry.addr in self.parkedCars.keys():
-        car = parkedCars[scanEntry.addr] = CarInfo(scanEntry)
-        p = Peripheral(scanEntry)
-        p.withDelegate(NotificationDelegate(car))
-    else:
-        car = parkedCars[scanEntry.addr]
-        p = Peripheral(car.MAC)
-        p.withDelegate(NotificationDelegate(car))
-        car.done = False
-    print("connected\n")
-    while True:
-        msg = (input("message to send: ")+"\n").encode("utf-8")
-        p.writeCharacteristic(18, bytes(msg))
-        while not car.done:
-            p.waitForNotifications(1)
-        if queryYesNo("would you like to do something else? "):
-            car.done = False
+    def __init__(self, defaultAddr = None, defaultName = None):
+        self.chosenCar = None
+        self.addr = defaultAddr
+        self.name = defaultName
+        self.peripheral = None
+
+    def newConnect(self):
+        print("Scanning...\n")
+        scanner = Scanner()
+        scan = scanner.scan(2)
+        namedDevices = [x for x in scan if x.getValueText(9) != None]
+        while True:
+            if not namedDevices:
+                print("There are no cars in the area to connect to\n")
+                break
+            dictDevices = {}
+            for count, device in enumerate(namedDevices, 1):
+                dictDevices[count] = device
+                print("({}) name:     {}".format(count, device.getValueText(9)))
+                print("{: >8}:   {}".format("MAC", device.addr))
+                print("{: >8}:     {} dB\n".format("RSSI", device.rssi))
+            userChoice = input("Which car would you like to connect to?\n")
+            if not userChoice:
+                break
+            if int(userChoice) in dictDevices.keys():
+                self.chosenCar = dictDevices[int(userChoice)]
+                break
+            print("that is not a valid option. Please choose again\n")
+        if self.chosenCar:
+            self.Connect(scanEntry = self.chosenCar)
         else:
-            break
-    p.disconnect()
-    print("finished for now\n")
+            print("didn't connect\n")
 
-"""
+    def Connect(self, scanEntry = None, MAC = None):
+        print("Connecting to Car...\n")
+        if scanEntry:
+            self.peripheral = Peripheral(scanEntry)
+            self.name, self.addr = scanEntry.getValueText(9), scanEntry.addr
+        else:
+            self.peripheral = Peripheral(MAC)
+            BLE.done = False
+        self.peripheral.withDelegate(NotificationDelegate())
+        print("connected\n")
+
+    def sendMessage(self):
+        msg = (input("message to send: ")+"\n").encode("utf-8")
+        self.peripheral.writeCharacteristic(18, bytes(msg))
+        while not BLE.done:
+            self.peripheral.waitForNotifications(1)
+        print("task complete\n")
+
+
+    def Disconnect(self):
+        self.peripheral.disconnect()
+        print("disconnected\n")
+    
+
 class parkingSpot:
 
     allowedAttributes = []
@@ -125,29 +128,32 @@ def checkIn():
     """function for selecting parking location and receiving
        location password"""
     print("\nCheck-in selected")
-    print("connecting to car")
-    carAttr = ["0", "Car1", "0000000020", time.time(), "0"]
-    dictCar = dict(zip(parkingSpot.allowedAttributes, carAttr))
-    newCar = parkingSpot(dictCar)
-    while True:
-        print("vacant locations: ")
-        for key, value in allParkingSpots.items():
-            if value.MAC == '0':
-                print(key)
-        selectSpot = input("Please select a location: ")
-        if selectSpot in allParkingSpots.keys() and int(allParkingSpots[selectSpot].MAC) == 0:
-            print("\nYou have selected location number {}.".format(selectSpot))
-            print("Generating parking pass...")
-            newCar.Spot = selectSpot
-            newCar.Confirmation = str(random.randint(10000000, 99999999))
-            print("Your confirmation number is {}.".format(newCar.Confirmation))
-            allParkingSpots[selectSpot] = newCar
-            saveLoc()
-            if queryYesNo("Would you like an email or text confirmation? "):
-                sendConfirmation(newCar.Confirmation)
-            break
-        print("\nInvalid. Parking location is occupied or non-existant.")
-
+    car = BLE(defaultAddr = "0", defaultName = "0")
+    car.newConnect()
+    if car.addr != "0":
+        carAttr = ["0", car.name, car.addr, time.time(), "0"]
+        dictCar = dict(zip(parkingSpot.allowedAttributes, carAttr))
+        newCar = parkingSpot(dictCar)
+        while True:
+            print("vacant locations: ")
+            for key, value in allParkingSpots.items():
+                if value.MAC == '0':
+                    print(key)
+            selectSpot = input("Please select a location: ")
+            if selectSpot in allParkingSpots.keys() and int(allParkingSpots[selectSpot].MAC) == 0:
+                print("\nYou have selected location number {}.".format(selectSpot))
+                car.sendMessage()
+                print("Generating parking pass...")
+                newCar.Spot = selectSpot
+                newCar.Confirmation = str(random.randint(10000000, 99999999))
+                print("Your confirmation number is {}.".format(newCar.Confirmation))
+                allParkingSpots[selectSpot] = newCar
+                saveLoc()
+                if queryYesNo("Would you like an email or text confirmation? "):
+                    sendConfirmation(newCar.Confirmation)
+                break
+            print("\nInvalid. Parking location is occupied or non-existant.")
+        car.Disconnect()
 
 def checkOut():
 
@@ -160,12 +166,15 @@ def checkOut():
         if selectCar == value.Confirmation:
             currentCar = allParkingSpots[key]
             print("\nRetrieving vehicle from location {}.".format(key))
+            car = BLE(defaultAddr = "0", defaultName = "0")
+            car.Connect(MAC = currentCar.MAC)
+            car.sendMessage()
             blankSpot = [key, "0", "0", "0", "0", "0"]
             dictBlankSpot = dict(zip(parkingSpot.allowedAttributes, blankSpot))
             allParkingSpots[key] = parkingSpot(dictBlankSpot)
             print("Location {} is now vacant.".format(key))
+            car.Disconnect()
             saveLoc()
-
             break
     else:
         print("Parking pass is invalid.")
