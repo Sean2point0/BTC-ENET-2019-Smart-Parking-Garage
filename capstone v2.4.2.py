@@ -240,8 +240,9 @@ def currentCars():
     """
     
     print("\nCurrent Customer Vehicles:")
-    for spot, carInfo in allParkingSpots.items():
-        print(str(carInfo))
+    for carInfo in allParkingSpots.values():
+        if carInfo.MAC != "0":
+            print(str(carInfo))
 
 
 def saveCustomerInfo():
@@ -513,7 +514,6 @@ def main():
         on first run.
     """
 
-    loginAttempts = 3
     if not allParkingSpots:
         fileLoc = '/home/pi/Documents/ENET_Capstone/parking_database.csv'
         with open(fileLoc, newline='', mode='r') as infile:
@@ -527,11 +527,9 @@ def main():
             userReader = csv.reader(userInfile)
             for rows in userReader:
                 userDict[rows[0]] = rows[1]
-    for a in  allParkingSpots.keys():
-        spot = allParkingSpots[a]
-        print(spot.Spot, spot.Confirmation)
-    print(userDict)
-
+    print(userDict) # REMOVE from final code
+    
+    loginAttempts = 3
     if userDict:
         while loginAttempts > 0:
             username = input("Username: ")
