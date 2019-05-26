@@ -1,12 +1,13 @@
+import sys
 import csv
 import random
 import serial
-import sys
 import getpass
-from collections import OrderedDict
-from bluepy.btle import Scanner, DefaultDelegate, Peripheral
-from datetime import *
 import smtplib
+from math import ceil
+from collections import OrderedDict
+from bluepy.btle import *
+from datetime import *
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -15,6 +16,13 @@ userDict = OrderedDict()
 SMSCarriers = OrderedDict()
 
 class NotificationDelegate(DefaultDelegate):
+
+    """ Subclass of the DefaultDelegate class. Whenever a connected BLE
+        peripheral device sends a message it is received as a "notification".
+        The handleNotification method is called whenever a notification is
+        received, which in this case decodes the message and displays the
+        text. The message "d" signals the BLE device is done
+    """
 
     def __init__(self):
         DefaultDelegate.__init__(self)
@@ -31,6 +39,8 @@ class NotificationDelegate(DefaultDelegate):
 
 class BLE:
 
+    """Docstring goes here"""
+
     done = False
 
     def __init__(self, defaultAddr = None, defaultName = None):
@@ -39,11 +49,12 @@ class BLE:
         self.name = defaultName
         self.peripheral = None
 
-    def newConnect(self):
+    def newConnect(self, currentCars):
         print("Scanning...\n")
         scanner = Scanner()
         scan = scanner.scan(2)
-        namedDevices = [x for x in scan if x.getValueText(9) != None]
+        namedDevices = [x for x in scan if x.getValueText(9) != None
+                                        and x.addr not in currentCars]
         while True:
             if not namedDevices:
                 print("There are no cars in the area to connect to\n")
@@ -51,10 +62,11 @@ class BLE:
             dictDevices = {}
             for count, device in enumerate(namedDevices, 1):
                 dictDevices[count] = device
-                print("({}) name:     {}".format(count, device.getValueText(9)))
+                devName = device.getValueText(9)
+                print("({}) name:     {}".format(count, devName))
                 print("{: >8}:   {}".format("MAC", device.addr))
                 print("{: >8}:     {} dB\n".format("RSSI", device.rssi))
-            userChoice = input("Which car would you like to connect to?\n")
+            userChoice = input("Which car would you like to connect to?")
             if not userChoice:
                 break
             if int(userChoice) in dictDevices.keys():
@@ -70,12 +82,13 @@ class BLE:
         print("Connecting to Car...\n")
         if scanEntry:
             self.peripheral = Peripheral(scanEntry)
-            self.name, self.addr = scanEntry.getValueText(9), scanEntry.addr
+            self.name = scanEntry.getValueText(9)
+            self.addr = scanEntry.addr
         else:
             self.peripheral = Peripheral(MAC)
+            self.addr = MAC
             BLE.done = False
         self.peripheral.withDelegate(NotificationDelegate())
-        print("connected\n")
 
     def sendMessage(self):
         msg = (input("message to send: ")+"\n").encode("utf-8")
@@ -92,14 +105,13 @@ class BLE:
 
 class parkingSpot:
 
-    """Class to hold all the info for each parkingSpot as attributes.
-       Each instance is created on start up when the program opens
-       the parking_database.csv file.
-
-       Each row of the csv is converted into a dictionary and passed
-       as a parameter when the instance is initialized. The
-       allowedAttributes are the csv column headers which are also
-       the dictAttributes.keys()."""
+    """ Class to hold all the info for each parking spot. Each instance
+        is created on start up when the program opens the parking_database.csv
+        file. Each row of the csv is converted into a dictionary and passed
+        as a parameter when the parkingSpot instance is initialized. The
+        allowedAttributes are the csv column headers which are also
+        the dictAttributes.keys()
+    """
 
     allowedAttributes = []
 
@@ -110,9 +122,10 @@ class parkingSpot:
 
     def attributesToDict(self):
 
-        """When it is time to store customer info back to a csv file 
-           attributesToDict() returns a dictionary of all the current
-           attributes using allowedAttributes as the keys"""
+        """ When it is time to store customer info back to a csv file 
+            attributesToDict() returns a dictionary of all the current
+            attributes using allowedAttributes as the keys
+        """
         
         dictSpot = {}
         for attr in parkingSpot.allowedAttributes:
@@ -139,17 +152,20 @@ def arduinoCom():
 
 def checkIn():
 
-    """function for selecting parking location and receiving
-       location password"""
+    """ function for selecting parking location and receiving
+        location password
+    """
     
     print("\nCheck-in selected")
     try:
         car = BLE(defaultAddr = "0", defaultName = "0")
-        car.newConnect()
+        currentCars = [car.MAC for car in allParkingSpots.values() if car.MAC != "0"]
+        car.newConnect(currentCars)
     except Exception as e:
         print("something went wrong: ", e)
     if car.addr != "0":
-        carAttr = ["0", car.name, car.addr, datetime.now(), "0"]
+        print("connected\n")
+        carAttr = ["0", car.name, car.addr, str(datetime.now()), "0"]
         dictCar = dict(zip(parkingSpot.allowedAttributes, carAttr))
         newCar = parkingSpot(dictCar)
         while True:
@@ -176,23 +192,33 @@ def checkIn():
 
 def checkOut():
 
-    """function to prompt for location password to retrieve vehicle
-       and vacate location"""
+    """ function to prompt for location password to retrieve vehicle
+        and vacate location
+    """
 
     print("\nCheck-out selected.")
     selectCar = input("Please enter confirmation number to retrieve vehicle: ")
     for key, value in allParkingSpots.items():
         if selectCar == value.Confirmation:
             currentCar = allParkingSpots[key]
-            print("\nRetrieving vehicle from location {}.".format(key))
             car = BLE(defaultAddr = "0", defaultName = "0")
             try:
                 car.Connect(MAC = currentCar.MAC)
-                car.sendMessage()
             except Exception as e:
                 print("something went wrong: ", e)
                 break
-            if car.name != "0":
+            if car.addr != "0":
+                print("connected\n")
+                totalPrice = getPrice(currentCar.StartTime)
+                print("Customer total is ${:.2f}".format(totalPrice))
+                if not queryYesNo("Has the customer paid? "):
+                    print("Customer must pay to retrieve vehicle")
+                    break
+                try:
+                    print("\nRetrieving vehicle from location {}.".format(key))
+                    car.sendMessage()
+                except Exception as e:
+                    print("something went wrong:", e)    
                 blankSpot = [key, "0", "0", "0", "0", "0"]
                 dictBlankSpot = dict(zip(parkingSpot.allowedAttributes, blankSpot))
                 allParkingSpots[key] = parkingSpot(dictBlankSpot)
@@ -202,15 +228,16 @@ def checkOut():
                 saveCustomerInfo()
                 break
             else:
-                print("didn't connect to car")
+                print("couldn't connect to car")
                 break
     else:
         print("Parking pass is invalid.")
 
 def currentCars():
 
-    """Prints the information for every parking spot
-       in the garage"""
+    """ Prints the information for every parking spot
+        in the garage
+    """
     
     print("\nCurrent Customer Vehicles:")
     for spot, carInfo in allParkingSpots.items():
@@ -219,8 +246,9 @@ def currentCars():
 
 def saveCustomerInfo():
 
-    """Updates csv file holding customer information whenever
-       a customer finishes either checking in or checking out"""
+    """ Updates csv file holding customer information whenever
+        a customer finishes either checking in or checking out
+    """
 
     fileLoc = '/home/pi/Documents/ENET_Capstone/parking_database.csv'
     with open(fileLoc, newline='', mode='w') as outfile:
@@ -233,8 +261,9 @@ def saveCustomerInfo():
 
 def sendConfirmation(ConfirmationNum):
 
-    """Sends the ConfirmationNum to the user-provided
-       mobile number or email via STMP"""
+    """ Sends the ConfirmationNum to the user-provided
+        mobile number or email via STMP
+    """
 
     garageEmail = "petersparkingpalace@gmail.com"
 
@@ -316,15 +345,16 @@ def sendConfirmation(ConfirmationNum):
 
 def resendConfirmation():
 
-    """pulls up all the current cars parked in the garage and passes the chosen
-       car's confirmation number to sendConfirmation()"""
+    """ pulls up all the current cars parked in the garage and passes the chosen
+        car's confirmation number to sendConfirmation()
+    """
     
     currentCars = [car for car in allParkingSpots.values() if car.MAC != "0"]
     if currentCars:
         while True:
             for car in currentCars:
                 print(str(car))
-            chosenCar = input("choose a car to resend confirmation email to: ")
+            chosenCar = input("choose a customer: ")
             if chosenCar in allParkingSpots.keys() and allParkingSpots[chosenCar].MAC != "0":
                 break
             if not queryYesNo("That is not a valid option. continue? "):
@@ -338,11 +368,21 @@ def resendConfirmation():
 def getPrice(timeStart):
 
     """Docstring goes here"""
-    
-    originalTime = datetime.strptime(timeStart, "%Y-%m-%d %H:%M:%S.%f")
+
+    rates = [200, 35, 5]
+    nextRates = [None] + rates
+    del nextRates[-1]
+    startTime = datetime.strptime(timeStart, "%Y-%m-%d %H:%M:%S.%f")
     currentTime = datetime.now()
-    timeParked = currentTime - originalTime
-    print("Total time stayed: ", str(timeParked))
+    timeParked = currentTime - startTime
+    times = [timeParked.days // 7,              # Weeks parked
+             timeParked.days % 7,               # Days parked 
+             ceil(timeParked.seconds // 3600)]  # Hours parked
+    totalPrice = 0
+    for time, rate, nextRate in zip(times, rates, nextRates):
+        price = time * rate
+        totalPrice += price if (not nextRate or nextRate > price) else nextRate
+    return totalPrice
 
 def printMenu():
 
@@ -358,16 +398,16 @@ def printMenu():
     print("\n===================| MENU |====================")
     print("|                                             |")
     for count, option in enumerate(options, 1):
-        print("|    Press [{}] to {: <28s}|".format(count, option))
+        print("|     Press [{}] to {: <27s}|".format(count, option))
     print("|                                             |")
     print("===============================================")
 
 
 def queryYesNo(question):
 
-    """Ask a yes/no question via input() and return their answer.
-    "question" is a string that is presented to the user.
-    The "answer" return value is True for "yes" or False for "no".
+    """ Ask a yes/no question via input() and return their answer.
+        "question" is a string that is presented to the user. The
+        "answer" return value is True for "yes" or False for "no".
     """
 
     valid = {"yes": True, "y": True, "ye": True,
@@ -385,17 +425,19 @@ def queryYesNo(question):
 
 def logOut():
 
-    """this function is only to print 'logging out...' but is used to
-       keep the methodology for the user choosing an option in mainMenu()
-       consistent"""
+    """ this function is only to print 'logging out...' but is used to
+        keep the methodology for the user choosing an option in mainMenu()
+        consistent
+    """
     
     print("logging out...")
 
 
 def mainMenu():
 
-    """Handles all input choices from the parking attendant for parking
-       garage functions and operations"""
+    """ Handles all input choices from the parking attendant for parking
+        garage functions and operations
+    """
 
     dictChoices = {"1": checkIn,
                    "2": checkOut,
@@ -467,11 +509,11 @@ def saveUsers():
 
 def main():
 
-    """Start of program. Initializes information from CSV files to dictionaries
-       on first run."""
+    """ Start of program. Initializes information from CSV files to dictionaries
+        on first run.
+    """
 
     loginAttempts = 3
-
     if not allParkingSpots:
         fileLoc = '/home/pi/Documents/ENET_Capstone/parking_database.csv'
         with open(fileLoc, newline='', mode='r') as infile:
@@ -493,7 +535,7 @@ def main():
     if userDict:
         while loginAttempts > 0:
             username = input("Username: ")
-            password = getpass.getpass()
+            password = getpass.getpass("Enter password (input is hidden):")
             if username in userDict.keys() and userDict[username] == password:
                 mainMenu()
                 break
@@ -508,10 +550,9 @@ def main():
             print("You have exceeded the maximum number of login attempts.")
     else:
         mainMenu()
-    print("exiting program...")
 
 
 if __name__ == "__main__":
     print("Welcome to Peter's Parking Party Palace")
     main()
-
+    print("exiting program...")
