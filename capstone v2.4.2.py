@@ -1,6 +1,6 @@
 import sys
 import csv
-import random
+from random import randint
 import serial
 import getpass
 import smtplib
@@ -15,13 +15,15 @@ allParkingSpots = OrderedDict()
 userDict = OrderedDict()
 SMSCarriers = OrderedDict()
 
+
 class NotificationDelegate(DefaultDelegate):
 
     """ Subclass of the DefaultDelegate class. Whenever a connected BLE
         peripheral device sends a message it is received as a "notification".
-        The handleNotification method is called whenever a notification is
+
+        handleNotification() method is called whenever a notification is
         received, which in this case decodes the message and displays the
-        text. The message "d" signals the BLE device is done
+        text. The message "d" signals the BLE device is done with its routine.
     """
 
     def __init__(self):
@@ -37,13 +39,39 @@ class NotificationDelegate(DefaultDelegate):
         except UnicodeDecodeError:
             print("Notification message not valid utf-8 format")
 
+
 class BLE:
 
-    """Docstring goes here"""
+    """ Class to handle connecting or reconnecting to BLE devices via bluepy.
+        While multiple connections via BLE 4.0 is possible the implementation
+        was unobtainable within the timeframe of this project without more
+        knowledgeable contributor's giudance pointing which way to go with this
+        project. A single threaded application is all that is needed however a
+        multithreaded end product would have been more satisfying.
+
+        BLE.done is a class boolean that dictates whether the BLE peripheral
+        device has notified it has completed its task set by sendMessage()
+
+        newConnect(): handles whichever BLE devices are advertising during
+        scanning and filters out BLE devices that are already added to the
+        network using the currentCars parameter.
+
+        Connect(): the connect() method tries to connect whether a scanEnry
+        class or a MAC address is passed as a parameter. in either case the
+        Raspberry Pi tries to connect to the device.
+
+        sendMessage(): once connections ae established communication is reliant
+        on the central device receiving update info from the peripheral. When
+        the peripheral is finished the necessary code is sent to the central
+        device.
+
+        Disconnect(): This method severs the BLE connection to allow for easy
+        decoupling between modules until further communication is needed.
+    """
 
     done = False
 
-    def __init__(self, defaultAddr = None, defaultName = None):
+    def __init__(self, defaultAddr=None, defaultName=None):
         self.chosenCar = None
         self.addr = defaultAddr
         self.name = defaultName
@@ -53,7 +81,7 @@ class BLE:
         print("Scanning...\n")
         scanner = Scanner()
         scan = scanner.scan(2)
-        namedDevices = [x for x in scan if x.getValueText(9) != None
+        namedDevices = [x for x in scan if x.getValueText(9) is not None
                                         and x.addr not in currentCars]
         while True:
             if not namedDevices:
@@ -74,12 +102,12 @@ class BLE:
                 break
             print("that is not a valid option. Please choose again\n")
         if self.chosenCar:
-            self.Connect(scanEntry = self.chosenCar)
+            self.Connect(scanEntry=self.chosenCar)
         else:
             print("didn't connect\n")
 
-    def Connect(self, scanEntry = None, MAC = None):
-        print("Connecting to Car...\n")
+    def Connect(self, scanEntry=None, MAC=None):
+        print("Connecting to device...\n")
         if scanEntry:
             self.peripheral = Peripheral(scanEntry)
             self.name = scanEntry.getValueText(9)
@@ -97,11 +125,10 @@ class BLE:
             self.peripheral.waitForNotifications(1)
         print("task complete\n")
 
-
     def Disconnect(self):
         self.peripheral.disconnect()
         print("disconnected\n")
-    
+
 
 class parkingSpot:
 
@@ -122,16 +149,16 @@ class parkingSpot:
 
     def attributesToDict(self):
 
-        """ When it is time to store customer info back to a csv file 
+        """ When it is time to store customer info back to a csv file
             attributesToDict() returns a dictionary of all the current
             attributes using allowedAttributes as the keys
         """
-        
+
         dictSpot = {}
         for attr in parkingSpot.allowedAttributes:
             dictSpot[attr] = getattr(self, attr, "0")
         return dictSpot
-    
+
     def __str__(self):
         string = ""
         for key in parkingSpot.allowedAttributes:
@@ -155,11 +182,12 @@ def checkIn():
     """ function for selecting parking location and receiving
         location password
     """
-    
+
     print("\nCheck-in selected")
     try:
-        car = BLE(defaultAddr = "0", defaultName = "0")
-        currentCars = [car.MAC for car in allParkingSpots.values() if car.MAC != "0"]
+        car = BLE(defaultAddr="0", defaultName="0")
+        parkedCars = allParkingSpots.values()
+        currentCars = [car.MAC for car in parkedCars if car.MAC != "0"]
         car.newConnect(currentCars)
     except Exception as e:
         print("something went wrong: ", e)
@@ -174,21 +202,23 @@ def checkIn():
                 if value.MAC == '0':
                     print(key)
             selectSpot = input("Please select a location: ")
-            if selectSpot in allParkingSpots.keys() and int(allParkingSpots[selectSpot].MAC) == 0:
-                print("\nYou have selected location number {}.".format(selectSpot))
+            currentSpot = allParkingSpots[selectSpot]
+            if selectSpot in allParkingSpots.keys() and currentSpot.MAC == "0":
+                print("You have selected location {}.".format(selectSpot))
                 car.sendMessage()
                 print("Generating parking pass...")
                 newCar.Spot = selectSpot
-                newCar.Confirmation = str(random.randint(10000000, 99999999))
-                print("Your confirmation number is {}.".format(newCar.Confirmation))
+                rand = newCar.Confirmation = str(randint(10000000, 99999999))
+                print("Your confirmation number is {}.".format(rand))
                 allParkingSpots[selectSpot] = newCar
                 saveCustomerInfo()
-                if queryYesNo("Would you like an email or text confirmation? "):
+                if queryYesNo("Would you like an email or text confirmation?"):
                     sendConfirmation(newCar.Confirmation)
                 break
             print("\nInvalid. Parking location is occupied or non-existant.")
         car.Disconnect()
         del car
+
 
 def checkOut():
 
@@ -201,9 +231,9 @@ def checkOut():
     for key, value in allParkingSpots.items():
         if selectCar == value.Confirmation:
             currentCar = allParkingSpots[key]
-            car = BLE(defaultAddr = "0", defaultName = "0")
+            car = BLE(defaultAddr="0", defaultName="0")
             try:
-                car.Connect(MAC = currentCar.MAC)
+                car.Connect(MAC=currentCar.MAC)
             except Exception as e:
                 print("something went wrong: ", e)
                 break
@@ -218,7 +248,7 @@ def checkOut():
                     print("\nRetrieving vehicle from location {}.".format(key))
                     car.sendMessage()
                 except Exception as e:
-                    print("something went wrong:", e)    
+                    print("something went wrong:", e)
                 blankSpot = [key, "0", "0", "0", "0", "0"]
                 dictBlankSpot = dict(zip(parkingSpot.allowedAttributes, blankSpot))
                 allParkingSpots[key] = parkingSpot(dictBlankSpot)
@@ -228,17 +258,18 @@ def checkOut():
                 saveCustomerInfo()
                 break
             else:
-                print("couldn't connect to car")
+                print("couldn't connect to device")
                 break
     else:
         print("Parking pass is invalid.")
+
 
 def currentCars():
 
     """ Prints the information for every parking spot
         in the garage
     """
-    
+
     print("\nCurrent Customer Vehicles:")
     for carInfo in allParkingSpots.values():
         if carInfo.MAC != "0":
@@ -254,7 +285,7 @@ def saveCustomerInfo():
     fileLoc = '/home/pi/Documents/ENET_Capstone/parking_database.csv'
     with open(fileLoc, newline='', mode='w') as outfile:
         fn = parkingSpot.allowedAttributes
-        writer = csv.DictWriter(outfile, fieldnames = fn)
+        writer = csv.DictWriter(outfile, fieldnames=fn)
         writer.writeheader()
         for Spot in allParkingSpots.values():
             writer.writerow(Spot.attributesToDict())
@@ -349,14 +380,15 @@ def resendConfirmation():
     """ pulls up all the current cars parked in the garage and passes the chosen
         car's confirmation number to sendConfirmation()
     """
-    
+
     currentCars = [car for car in allParkingSpots.values() if car.MAC != "0"]
     if currentCars:
         while True:
             for car in currentCars:
                 print(str(car))
             chosenCar = input("choose a customer: ")
-            if chosenCar in allParkingSpots.keys() and allParkingSpots[chosenCar].MAC != "0":
+            if chosenCar in allParkingSpots.keys()
+            and allParkingSpots[chosenCar].MAC != "0":
                 break
             if not queryYesNo("That is not a valid option. continue? "):
                 chosenCar = ""
@@ -365,6 +397,7 @@ def resendConfirmation():
             sendConfirmation(allParkingSpots[chosenCar].Confirmation)
     else:
         print("There are no cars currently parked")
+
 
 def getPrice(timeStart):
 
@@ -377,13 +410,14 @@ def getPrice(timeStart):
     currentTime = datetime.now()
     timeParked = currentTime - startTime
     times = [timeParked.days // 7,              # Weeks parked
-             timeParked.days % 7,               # Days parked 
+             timeParked.days % 7,               # Days parked
              ceil(timeParked.seconds // 3600)]  # Hours parked
     totalPrice = 0
     for time, rate, nextRate in zip(times, rates, nextRates):
         price = time * rate
         totalPrice += price if (not nextRate or nextRate > price) else nextRate
     return totalPrice
+
 
 def printMenu():
 
@@ -430,7 +464,7 @@ def logOut():
         keep the methodology for the user choosing an option in mainMenu()
         consistent
     """
-    
+
     print("logging out...")
 
 
@@ -527,8 +561,9 @@ def main():
             userReader = csv.reader(userInfile)
             for rows in userReader:
                 userDict[rows[0]] = rows[1]
-    print(userDict) # REMOVE from final code
-    
+    # REMOVE from final code
+    print(userDict)
+
     loginAttempts = 3
     if userDict:
         while loginAttempts > 0:
