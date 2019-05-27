@@ -4,16 +4,29 @@ from random import randint
 import serial
 import getpass
 import smtplib
+import time
 from math import ceil
+import threading
 from collections import OrderedDict
 from bluepy.btle import *
-from datetime import *
+from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 allParkingSpots = OrderedDict()
 userDict = OrderedDict()
 SMSCarriers = OrderedDict()
+
+class printDots(threading.Thread):
+
+    def __init__(self):
+        threading.Thread.__init__(self)
+
+    def run(self):
+        for x in range(3):
+            time.sleep(0.5)
+            sys.stdout.write('.')
+        sys.stdout.write('\n')
 
 
 class NotificationDelegate(DefaultDelegate):
@@ -78,14 +91,16 @@ class BLE:
         self.peripheral = None
 
     def newConnect(self, currentCars):
-        print("Scanning...\n")
+        sys.stdout.write('Scanning')
+        p = printDots()
+        p.start()
         scanner = Scanner()
         scan = scanner.scan(2)
         namedDevices = [x for x in scan if x.getValueText(9) is not None
                                         and x.addr not in currentCars]
         while True:
             if not namedDevices:
-                print("There are no cars in the area to connect to\n")
+                print("There are no cars in the area to connect to")
                 break
             dictDevices = {}
             for count, device in enumerate(namedDevices, 1):
@@ -100,14 +115,17 @@ class BLE:
             if int(userChoice) in dictDevices.keys():
                 self.chosenCar = dictDevices[int(userChoice)]
                 break
-            print("that is not a valid option. Please choose again\n")
+            print("that is not a valid option. Please choose again")
         if self.chosenCar:
             self.Connect(scanEntry=self.chosenCar)
         else:
-            print("didn't connect\n")
+            print("didn't connect")
 
     def Connect(self, scanEntry=None, MAC=None):
-        print("Connecting to device...\n")
+        sys.stdout.write('Connecting to device')
+        p = printDots()
+        p.start()
+        time.sleep(2)
         if scanEntry:
             self.peripheral = Peripheral(scanEntry)
             self.name = scanEntry.getValueText(9)
@@ -123,11 +141,11 @@ class BLE:
         self.peripheral.writeCharacteristic(18, bytes(msg))
         while not BLE.done:
             self.peripheral.waitForNotifications(1)
-        print("task complete\n")
+        print("task complete")
 
     def Disconnect(self):
         self.peripheral.disconnect()
-        print("disconnected\n")
+        print("disconnected")
 
 
 class parkingSpot:
@@ -212,7 +230,7 @@ def checkIn():
                 print("Your confirmation number is {}.".format(rand))
                 allParkingSpots[selectSpot] = newCar
                 saveCustomerInfo()
-                if queryYesNo("Would you like an email or text confirmation?"):
+                if queryYesNo("Would you like an email or text confirmation? "):
                     sendConfirmation(newCar.Confirmation)
                 break
             print("\nInvalid. Parking location is occupied or non-existant.")
@@ -227,53 +245,59 @@ def checkOut():
     """
 
     print("\nCheck-out selected.")
-    selectCar = input("Please enter confirmation number to retrieve vehicle: ")
-    for key, value in allParkingSpots.items():
-        if selectCar == value.Confirmation:
-            currentCar = allParkingSpots[key]
-            car = BLE(defaultAddr="0", defaultName="0")
-            try:
-                car.Connect(MAC=currentCar.MAC)
-            except Exception as e:
-                print("something went wrong: ", e)
-                break
-            if car.addr != "0":
-                print("connected\n")
-                totalPrice = getPrice(currentCar.StartTime)
-                print("Customer total is ${:.2f}".format(totalPrice))
-                if not queryYesNo("Has the customer paid? "):
-                    print("Customer must pay to retrieve vehicle")
-                    break
+    parkedCars = allParkingSpots.values()
+    currentCars = [car.MAC for car in parkedCars if car.MAC != "0"]
+    if currentCars:
+        selectCar = input("Please enter confirmation number to retrieve vehicle: ")
+        for key, value in allParkingSpots.items():
+            if selectCar == value.Confirmation:
+                currentCar = allParkingSpots[key]
+                car = BLE(defaultAddr="0", defaultName="0")
                 try:
-                    print("\nRetrieving vehicle from location {}.".format(key))
-                    car.sendMessage()
+                    car.Connect(MAC=currentCar.MAC)
                 except Exception as e:
-                    print("something went wrong:", e)
-                blankSpot = [key, "0", "0", "0", "0", "0"]
-                dictBlankSpot = dict(zip(parkingSpot.allowedAttributes, blankSpot))
-                allParkingSpots[key] = parkingSpot(dictBlankSpot)
-                print("Location {} is now vacant.".format(key))
-                car.Disconnect()
-                del car
-                saveCustomerInfo()
-                break
-            else:
-                print("couldn't connect to device")
-                break
+                    print("something went wrong: ", e)
+                    break
+                if car.addr != "0":
+                    print("connected\n")
+                    totalPrice = getPrice(currentCar.StartTime)
+                    print("Customer total is ${:.2f}".format(totalPrice))
+                    if not queryYesNo("Has the customer paid? "):
+                        print("Customer must pay to retrieve vehicle")
+                        break
+                    try:
+                        print("\nRetrieving vehicle from location {}.".format(key))
+                        car.sendMessage()
+                    except Exception as e:
+                        print("something went wrong:", e)
+                    blankSpot = [key, "0", "0", "0", "0", "0"]
+                    dictBlankSpot = dict(zip(parkingSpot.allowedAttributes, blankSpot))
+                    allParkingSpots[key] = parkingSpot(dictBlankSpot)
+                    print("Location {} is now vacant.".format(key))
+                    car.Disconnect()
+                    del car
+                    saveCustomerInfo()
+                    break
+                else:
+                    print("couldn't connect to device")
+                    break
+        else:
+            print("Parking pass is invalid.")
     else:
-        print("Parking pass is invalid.")
-
+        print("There are currently no cars parked")
 
 def currentCars():
 
     """ Prints the information for every parking spot
         in the garage
     """
-
-    print("\nCurrent Customer Vehicles:")
-    for carInfo in allParkingSpots.values():
-        if carInfo.MAC != "0":
-            print(str(carInfo))
+    currentCars = [car for car in allParkingSpots.values() if car.MAC != '0']
+    if currentCars:
+        print("\nCurrent Customer Vehicles:")
+        for car in currentCars:
+            print(str(car))
+    else:
+        print("There are no cars currently parked")
 
 
 def saveCustomerInfo():
@@ -308,13 +332,13 @@ def sendConfirmation(ConfirmationNum):
         for count, carrier in enumerate(carrierInfo, 1):
             SMSCarriers[str(count)] = carrier
 
-    if queryYesNo("Will this email be sent to a mobile device?"):
+    if queryYesNo("Will this email be sent to a mobile device? "):
         mobile = True
         while True:
             phoneNum = input("Enter phone number: ")
             if len(phoneNum) == 10:
                 if queryYesNo("You entered {}.\n".format(phoneNum) +
-                              "Is this correct?"):
+                              "Is this correct? "):
                     break
             else:
                 print("That is not a valid number." +
@@ -340,11 +364,11 @@ def sendConfirmation(ConfirmationNum):
         while True:
             customerEmail = input("Enter email address: ")
             if queryYesNo("You entered {}.\n".format(customerEmail) +
-                          "Is this correct?"):
+                          "Is this correct? "):
                 break
 
     if len(customerEmail) > 0:
-        if queryYesNo("Ready to send. Confirm?"):
+        if queryYesNo("Ready to send. Confirm? "):
             msg = MIMEMultipart()
             msg["From"] = garageEmail
             msg["To"] = customerEmail
@@ -387,8 +411,7 @@ def resendConfirmation():
             for car in currentCars:
                 print(str(car))
             chosenCar = input("choose a customer: ")
-            if chosenCar in allParkingSpots.keys()
-            and allParkingSpots[chosenCar].MAC != "0":
+            if chosenCar in allParkingSpots.keys() and allParkingSpots[chosenCar].MAC != "0":
                 break
             if not queryYesNo("That is not a valid option. continue? "):
                 chosenCar = ""
@@ -411,8 +434,12 @@ def getPrice(timeStart):
     timeParked = currentTime - startTime
     times = [timeParked.days // 7,              # Weeks parked
              timeParked.days % 7,               # Days parked
-             ceil(timeParked.seconds // 3600)]  # Hours parked
+             ceil(timeParked.seconds / 3600)]   # Hours parked
     totalPrice = 0
+    print("Total time parked: ")
+    print("{: <4} week(s)".format(times[0]))
+    print("{: <4} day(s)".format(times[1]))
+    print("{: <4} hour(s)".format(times[2]))
     for time, rate, nextRate in zip(times, rates, nextRates):
         price = time * rate
         totalPrice += price if (not nextRate or nextRate > price) else nextRate
@@ -423,8 +450,8 @@ def printMenu():
 
     """ Displays the menu options for the program"""
 
-    options = ["check in",
-               "check out",
+    options = ["check in customer",
+               "check out customer",
                "create user",
                "delete user",
                "resend confirmation",
@@ -449,7 +476,7 @@ def queryYesNo(question):
              "no": False, "n": False}
 
     while True:
-        sys.stdout.write(question + "[y/n]")
+        sys.stdout.write(question + "[y/n]: ")
         choice = input().lower()
         if choice in valid:
             return valid[choice]
@@ -498,7 +525,7 @@ def mainMenu():
     else:
         print("that is not a valid option")
     if dictChoices[userChoice] != logOut:
-        if queryYesNo("\nContinue?"):
+        if queryYesNo("\nContinue? "):
             mainMenu()
         else:
             logOut()
@@ -524,13 +551,15 @@ def deleteUser():
 
     """Deletes an authorized user from the database"""
 
-    username = None
-    print("\n'Delete user' selected.")
-    username = input("Enter username to delete: ")
-    userDict.pop(username, None)
-    print(username + "'s account has been deleted.")
-    saveUsers()
-
+    if userDict:
+        username = None
+        print("\n'Delete user' selected.")
+        username = input("Enter username to delete: ")
+        userDict.pop(username, None)
+        print(username + "'s account has been deleted.")
+        saveUsers()
+    else:
+        print("There are no current users")
 
 def saveUsers():
 
@@ -568,7 +597,7 @@ def main():
     if userDict:
         while loginAttempts > 0:
             username = input("Username: ")
-            password = getpass.getpass("Enter password (input is hidden):")
+            password = getpass.getpass("Enter password (input is hidden): ")
             if username in userDict.keys() and userDict[username] == password:
                 mainMenu()
                 break
