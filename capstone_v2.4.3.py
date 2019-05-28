@@ -452,10 +452,10 @@ def printMenu():
 
     options = ["check in customer",
                "check out customer",
+               "check current vehicles",
+               "resend confirmation",
                "create user",
                "delete user",
-               "resend confirmation",
-               "check current vehicles",
                "log out"]
     print("\n===================| MENU |====================")
     print("|                                             |")
@@ -503,10 +503,10 @@ def mainMenu():
 
     dictChoices = {"1": checkIn,
                    "2": checkOut,
-                   "3": createUser,
-                   "4": deleteUser,
-                   "5": resendConfirmation,
-                   "6": currentCars,
+                   "3": currentCars,
+                   "4": resendConfirmation,
+                   "5": createUser,
+                   "6": deleteUser,
                    "7": logOut}
     numSpotsFull = [car for car in allParkingSpots.values() if car.MAC != "0"]
     if len(numSpotsFull) == len(allParkingSpots):
@@ -591,7 +591,9 @@ def main():
             for rows in userReader:
                 userDict[rows[0]] = rows[1]
     # REMOVE from final code
-    print(userDict)
+    if userDict:
+        for key, value in userDict.items():
+            print("{} : {}".format(key, value))
 
     loginAttempts = 3
     if userDict:
@@ -618,3 +620,4 @@ if __name__ == "__main__":
     print("Welcome to Peter's Parking Party Palace")
     main()
     print("exiting program...")
+
