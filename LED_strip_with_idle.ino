@@ -34,12 +34,20 @@ struct CRGB park5[PARK5_LEDS];
 struct CRGB park6[PARK6_LEDS];
 
 void Park();
+
 void Space1();
 void Space2();
 void Space3();
 void Space4();
 void Space5();
 void Space6();
+
+void Space1return();
+void Space2return();
+void Space3return();
+void Space4return();
+void Space5return();
+void Space6return();
 
 void setup(){
   delay(3000);
@@ -109,8 +117,87 @@ void Park(){
   FastLED.delay(500);
   FastLED[0].clearLedData();
 }
-
 void Space1(){
+  for(int x = PARK1_LEDS; x >= 1; x--){
+    if(x<=20){
+      park1[x+4].setRGB(0, 0, 0);
+    }
+    park1[x].setRGB(127,0,255);
+    FastLED[1].showLeds(BRIGHTNESS);
+    FastLED.delay(100);
+  }
+  FastLED.delay(500);   
+  FastLED[1].clearLedData();
+}
+
+void Space2(){
+  for(int j = PARK2_LEDS; j >= 1; j--){
+    if(j<=20){
+      park2[j+4].setRGB(0, 0, 0);
+    }
+    park2[j].setRGB(127,0,255);
+    FastLED[2].showLeds(BRIGHTNESS);
+    FastLED.delay(100);
+  }
+  FastLED.delay(500);   
+  FastLED[2].clearLedData();
+}
+
+void Space3(){
+  for(int x = PARK3_LEDS; x <= 1; x--){
+    if(x<=20){
+      park3[x+4].setRGB(0, 0, 0);
+    }
+    park3[x].setRGB(127,0,255);
+    FastLED[3].showLeds(BRIGHTNESS);
+    FastLED.delay(100);
+  }
+  FastLED.delay(500);   
+  FastLED[3].clearLedData();
+}
+
+void Space4(){
+  for(int x = PARK4_LEDS; x <= 1 ; x--){
+    if(x<=20){
+      park4[x+4].setRGB(0, 0, 0);
+    }
+    park4[x].setRGB(127,0,255);
+    FastLED[4].showLeds(BRIGHTNESS);
+    FastLED.delay(100);
+  }
+  FastLED.delay(500);   
+  FastLED[4].clearLedData();
+}
+
+void Space5(){
+  for(int x = PARK5_LEDS; x <= 1 ; x--){
+    if(x<=20){
+      park5[x+4].setRGB(0, 0, 0);
+    }
+    park5[x].setRGB(127,0,255);
+    FastLED[5].showLeds(BRIGHTNESS);
+    FastLED.delay(100);
+  }
+  FastLED.delay(500);   
+  FastLED[5].clearLedData();
+}
+
+void Space6(){
+  for(int x = PARK6_LEDS; x <= 1; x--){
+    if(x<=20){
+      park6[x+4].setRGB(0, 0, 0);
+    }
+    park6[x].setRGB(127,0,255);
+    FastLED[6].showLeds(BRIGHTNESS);
+    FastLED.delay(100);
+  }
+  FastLED.delay(500);   
+  FastLED[6].clearLedData();
+}
+
+/////////////////////////////////////
+
+void Space1return(){
   for(int x = 0; x < PARK1_LEDS; x++){
     if(x>=4){
       park1[x-4].setRGB(0, 0, 0);
@@ -123,7 +210,7 @@ void Space1(){
   FastLED[1].clearLedData();
 }
 
-void Space2(){
+void Space2return(){
   for(int j = 0; j < PARK2_LEDS; j++){
     if(j>=4){
       park2[j-4].setRGB(0, 0, 0);
@@ -136,7 +223,7 @@ void Space2(){
   FastLED[2].clearLedData();
 }
 
-void Space3(){
+void Space3return(){
   for(int x = 0; x < PARK3_LEDS; x++){
     if(x>=4){
       park3[x-4].setRGB(0, 0, 0);
@@ -149,7 +236,7 @@ void Space3(){
   FastLED[3].clearLedData();
 }
 
-void Space4(){
+void Space4return(){
   for(int x = 0; x < PARK4_LEDS; x++){
     if(x>=4){
       park4[x-4].setRGB(0, 0, 0);
@@ -162,7 +249,7 @@ void Space4(){
   FastLED[4].clearLedData();
 }
 
-void Space5(){
+void Space5return(){
   for(int x = 0; x < PARK5_LEDS; x++){
     if(x>=4){
       park5[x-4].setRGB(0, 0, 0);
@@ -175,7 +262,7 @@ void Space5(){
   FastLED[5].clearLedData();
 }
 
-void Space6(){
+void Space6return(){
   for(int x = 0; x < PARK6_LEDS; x++){
     if(x>=4){
       park6[x-4].setRGB(0, 0, 0);
