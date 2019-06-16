@@ -77,11 +77,13 @@ def checkOut():
     """ function to prompt for location password to retrieve vehicle
         and vacate location
     """
-    leave = ['a', 'b', 'c', 'd', 'e', 'f']
+
+    leave = "abcdef"
     print("\nCheck-out selected.")
     parkedCars = allParkingSpots.values()
     currentCars = [car.MAC for car in parkedCars if car.MAC != "0"]
     if currentCars:
+        print("please have customer enter in their confirmation number")
         selectCar = LCDandKeypad.exit()
         for key, value in allParkingSpots.items():
             if selectCar == value.Confirmation:
@@ -133,6 +135,7 @@ def currentCars():
     """ Prints the information for every parking spot
         in the garage
     """
+
     currentCars = [car for car in allParkingSpots.values() if car.MAC != '0']
     if currentCars:
         print("\nCurrent Customer Vehicles:")
