@@ -1,12 +1,17 @@
 import csv
-import random
+from random import randint
 import serial
-import sys
 import getpass
-from collections import OrderedDict
-from bluepy.btle import Scanner, DefaultDelegate, Peripheral
-import datetime
 import smtplib
+from math import ceil
+
+from BLE import *
+import LCDandKeypad
+from parkingSpot import parkingSpot
+from queryYesNo import queryYesNo
+
+from collections import OrderedDict
+from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -14,124 +19,31 @@ allParkingSpots = OrderedDict()
 userDict = OrderedDict()
 SMSCarriers = OrderedDict()
 
-class NotificationDelegate(DefaultDelegate):
 
-    def __init__(self):
-        DefaultDelegate.__init__(self)
-
-    def handleNotification(self, cHandle, data):
-        try:
-            msg = data.decode("utf-8")
-            print("Notification recieved:")
-            print("Msg: {}".format(msg))
-            if msg == "d":
-                BLE.done = True
-        except UnicodeDecodeError:
-            print("Notification message not valid utf-8 format")
-
-class BLE:
-
-    done = False
-
-    def __init__(self, defaultAddr = None, defaultName = None):
-        self.chosenCar = None
-        self.addr = defaultAddr
-        self.name = defaultName
-        self.peripheral = None
-
-    def newConnect(self):
-        print("Scanning...\n")
-        scanner = Scanner()
-        scan = scanner.scan(2)
-        namedDevices = [x for x in scan if x.getValueText(9) != None]
-        while True:
-            if not namedDevices:
-                print("There are no cars in the area to connect to\n")
-                break
-            dictDevices = {}
-            for count, device in enumerate(namedDevices, 1):
-                dictDevices[count] = device
-                print("({}) name:     {}".format(count, device.getValueText(9)))
-                print("{: >8}:   {}".format("MAC", device.addr))
-                print("{: >8}:     {} dB\n".format("RSSI", device.rssi))
-            userChoice = input("Which car would you like to connect to?\n")
-            if not userChoice:
-                break
-            if int(userChoice) in dictDevices.keys():
-                self.chosenCar = dictDevices[int(userChoice)]
-                break
-            print("that is not a valid option. Please choose again\n")
-        if self.chosenCar:
-            self.Connect(scanEntry = self.chosenCar)
-        else:
-            print("didn't connect\n")
-
-    def Connect(self, scanEntry = None, MAC = None):
-        print("Connecting to Car...\n")
-        if scanEntry:
-            self.peripheral = Peripheral(scanEntry)
-            self.name, self.addr = scanEntry.getValueText(9), scanEntry.addr
-        else:
-            self.peripheral = Peripheral(MAC)
-            BLE.done = False
-        self.peripheral.withDelegate(NotificationDelegate())
-        print("connected\n")
-
-    def sendMessage(self):
-        msg = (input("message to send: ")+"\n").encode("utf-8")
-        self.peripheral.writeCharacteristic(18, bytes(msg))
-        while not BLE.done:
-            self.peripheral.waitForNotifications(1)
-        print("task complete\n")
-
-
-    def Disconnect(self):
-        self.peripheral.disconnect()
-        print("disconnected\n")
-    
-
-class parkingSpot:
-
-    allowedAttributes = []
-
-    def __init__(self, dictAttributes):
-        for key, value in dictAttributes.items():
-            if key is not None and value is not None:
-                setattr(self, key, value)
-
-    def dictforcsv(self):
-        dictSpot = {}
-        for attr in parkingSpot.allowedAttributes:
-            dictSpot[attr] = getattr(self, attr, "0")
-        return dictSpot
-    
-    def __str__(self):
-        string = ""
-        for key in parkingSpot.allowedAttributes:
-            if key in self.__dict__:
-                string += "\n{: <12}: {}".format(key, getattr(self, key, "0"))
-        return string
-
-
-def arduinoCom():
+def arduinoCom(spot):
 
     """function for RPi to communicate serially with Arduino"""
 
-    ser = serial.Serial('/dev/ttyACM0')
-    while 1:
-        n = input('Enter a number of times for the led to flash: ')
-        ser.write(n)
-
+    ser = serial.Serial('/dev/ttyACM0', 9600)
+    ser.write(bytes(spot.encode("utf-8")))
 
 def checkIn():
 
-    """function for selecting parking location and receiving
-       location password"""
+    """ function for selecting parking location and receiving
+        location password
+    """
+
     print("\nCheck-in selected")
-    car = BLE(defaultAddr = "0", defaultName = "0")
-    car.newConnect()
+    try:
+        car = BLE(defaultAddr="0", defaultName="0")
+        parkedCars = allParkingSpots.values()
+        currentCars = [car.MAC for car in parkedCars if car.MAC != "0"]
+        car.newConnect(currentCars)
+    except Exception as e:
+        print("something went wrong: ", e)
     if car.addr != "0":
-        carAttr = ["0", car.name, car.addr, datetime.datetime.now(), "0"]
+        print("connected\n")
+        carAttr = ["0", car.name, car.addr, str(datetime.now()), "0"]
         dictCar = dict(zip(parkingSpot.allowedAttributes, carAttr))
         newCar = parkingSpot(dictCar)
         while True:
@@ -140,65 +52,116 @@ def checkIn():
                 if value.MAC == '0':
                     print(key)
             selectSpot = input("Please select a location: ")
-            if selectSpot in allParkingSpots.keys() and int(allParkingSpots[selectSpot].MAC) == 0:
-                print("\nYou have selected location number {}.".format(selectSpot))
-                car.sendMessage()
+            currentSpot = allParkingSpots[selectSpot]
+            if selectSpot in allParkingSpots.keys() and currentSpot.MAC == "0":
+                print("You have selected location {}.".format(selectSpot))
+                arduinoCom(selectSpot)
+                car.sendMessage('g')
                 print("Generating parking pass...")
                 newCar.Spot = selectSpot
-                newCar.Confirmation = str(random.randint(10000000, 99999999))
-                print("Your confirmation number is {}.".format(newCar.Confirmation))
+                rand = newCar.Confirmation = str(randint(10000000, 99999999))
+                print("Your confirmation number is {}.".format(rand))
+                LCDandKeypad.entranceWrite("Confirmation #:", str(rand))
                 allParkingSpots[selectSpot] = newCar
-                saveLoc()
+                saveCustomerInfo()
                 if queryYesNo("Would you like an email or text confirmation? "):
                     sendConfirmation(newCar.Confirmation)
                 break
             print("\nInvalid. Parking location is occupied or non-existant.")
         car.Disconnect()
+        del car
+
 
 def checkOut():
 
-    """function to prompt for location password to retrieve vehicle
-       and vacate location"""
-
+    """ function to prompt for location password to retrieve vehicle
+        and vacate location
+    """
+    leave = ['a', 'b', 'c', 'd', 'e', 'f']
     print("\nCheck-out selected.")
-    selectCar = input("Please enter confirmation number to retrieve vehicle: ")
-    for key, value in allParkingSpots.items():
-        if selectCar == value.Confirmation:
-            currentCar = allParkingSpots[key]
-            print("\nRetrieving vehicle from location {}.".format(key))
-            car = BLE(defaultAddr = "0", defaultName = "0")
-            car.Connect(MAC = currentCar.MAC)
-            car.sendMessage()
-            blankSpot = [key, "0", "0", "0", "0", "0"]
-            dictBlankSpot = dict(zip(parkingSpot.allowedAttributes, blankSpot))
-            allParkingSpots[key] = parkingSpot(dictBlankSpot)
-            print("Location {} is now vacant.".format(key))
-            car.Disconnect()
-            saveLoc()
-            break
+    parkedCars = allParkingSpots.values()
+    currentCars = [car.MAC for car in parkedCars if car.MAC != "0"]
+    if currentCars:
+        selectCar = LCDandKeypad.exit()
+        for key, value in allParkingSpots.items():
+            if selectCar == value.Confirmation:
+                LCDandKeypad.exitWrite("retrieving car")
+                currentCar = allParkingSpots[key]
+                car = BLE(defaultAddr="0", defaultName="0")
+                try:
+                    car.Connect(MAC=currentCar.MAC)
+                except Exception as e:
+                    print("something went wrong: ", e)
+                    break
+                if car.addr != "0":
+                    print("connected\n")
+                    totalPrice = getPrice(currentCar.StartTime)
+                    print("Customer total is ${:.2f}".format(totalPrice))
+                    LCDandKeypad.exitWrite("Amount owed:",
+                                           "${:.2f}".format(totalPrice))
+                    if not queryYesNo("Has the customer paid? "):
+                        LCDandKeypad.exitWrite("NO $ NO CAR")
+                        print("Customer must pay to retrieve vehicle")
+                        break
+                    try:
+                        print("\nRetrieving vehicle from location {}.".format(key))
+                        arduinoCom(leave[int(key)-1])
+                        car.sendMessage('b')
+                        arduinoCom('x')
+                        car.sendMessage('g')
+                    except Exception as e:
+                        print("something went wrong:", e)
+                    blankSpot = [key, "0", "0", "0", "0", "0"]
+                    dictBlankSpot = dict(zip(parkingSpot.allowedAttributes, blankSpot))
+                    allParkingSpots[key] = parkingSpot(dictBlankSpot)
+                    print("Location {} is now vacant.".format(key))
+                    car.Disconnect()
+                    del car
+                    saveCustomerInfo()
+                    break
+                else:
+                    print("couldn't connect to device")
+                    break
+        else:
+            print("Parking pass is invalid")
+            LCDandKeypad.exitWrite("Parking pass",  "is invalid")
     else:
-        print("Parking pass is invalid.")
+        print("There are currently no cars parked")
 
 def currentCars():
-    print("\nCurrent Customer Vehicles:")
-    for spot, carInfo in allParkingSpots.items():
-        print(str(carInfo))
+
+    """ Prints the information for every parking spot
+        in the garage
+    """
+    currentCars = [car for car in allParkingSpots.values() if car.MAC != '0']
+    if currentCars:
+        print("\nCurrent Customer Vehicles:")
+        for car in currentCars:
+            print(str(car))
+    else:
+        print("There are no cars currently parked")
 
 
-def saveLoc():
+def saveCustomerInfo():
+
+    """ Updates csv file holding customer information whenever
+        a customer finishes either checking in or checking out
+    """
+
     fileLoc = '/home/pi/Documents/ENET_Capstone/parking_database.csv'
     with open(fileLoc, newline='', mode='w') as outfile:
         fn = parkingSpot.allowedAttributes
-        writer = csv.DictWriter(outfile, fieldnames = fn)
+        writer = csv.DictWriter(outfile, fieldnames=fn)
         writer.writeheader()
         for Spot in allParkingSpots.values():
-            writer.writerow(Spot.dictforcsv())
+            writer.writerow(Spot.attributesToDict())
 
 
 def sendConfirmation(ConfirmationNum):
 
-    """Sends the ConfirmationNum to the user-provided
-       mobile number or email via STMP"""
+    """ Sends the ConfirmationNum to the user-provided
+        mobile number or email via STMP
+    """
 
     garageEmail = "petersparkingpalace@gmail.com"
 
@@ -211,13 +174,13 @@ def sendConfirmation(ConfirmationNum):
         for count, carrier in enumerate(carrierInfo, 1):
             SMSCarriers[str(count)] = carrier
 
-    if queryYesNo("Will this email be sent to a mobile device?"):
+    if queryYesNo("Will this email be sent to a mobile device? "):
         mobile = True
         while True:
             phoneNum = input("Enter phone number: ")
             if len(phoneNum) == 10:
                 if queryYesNo("You entered {}.\n".format(phoneNum) +
-                              "Is this correct?"):
+                              "Is this correct? "):
                     break
             else:
                 print("That is not a valid number." +
@@ -243,11 +206,11 @@ def sendConfirmation(ConfirmationNum):
         while True:
             customerEmail = input("Enter email address: ")
             if queryYesNo("You entered {}.\n".format(customerEmail) +
-                          "Is this correct?"):
+                          "Is this correct? "):
                 break
 
     if len(customerEmail) > 0:
-        if queryYesNo("Ready to send. Confirm?"):
+        if queryYesNo("Ready to send. Confirm? "):
             msg = MIMEMultipart()
             msg["From"] = garageEmail
             msg["To"] = customerEmail
@@ -279,12 +242,17 @@ def sendConfirmation(ConfirmationNum):
 
 
 def resendConfirmation():
+
+    """ pulls up all the current cars parked in the garage and passes the chosen
+        car's confirmation number to sendConfirmation()
+    """
+
     currentCars = [car for car in allParkingSpots.values() if car.MAC != "0"]
     if currentCars:
         while True:
             for car in currentCars:
                 print(str(car))
-            chosenCar = input("choose a car to resend confirmation email to: ")
+            chosenCar = input("choose a customer: ")
             if chosenCar in allParkingSpots.keys() and allParkingSpots[chosenCar].MAC != "0":
                 break
             if not queryYesNo("That is not a valid option. continue? "):
@@ -296,60 +264,71 @@ def resendConfirmation():
         print("There are no cars currently parked")
 
 
-def menu():
+def getPrice(timeStart):
+
+    """Docstring goes here"""
+
+    rates = [200, 35, 5]
+    nextRates = [None] + rates
+    del nextRates[-1]
+    startTime = datetime.strptime(timeStart, "%Y-%m-%d %H:%M:%S.%f")
+    currentTime = datetime.now()
+    timeParked = currentTime - startTime
+    times = [timeParked.days // 7,              # Weeks parked
+             timeParked.days % 7,               # Days parked
+             ceil(timeParked.seconds / 3600)]   # Hours parked
+    totalPrice = 0
+    print("Total time parked: ")
+    print("{: <4} week(s)".format(times[0]))
+    print("{: <4} day(s)".format(times[1]))
+    print("{: <4} hour(s)".format(times[2]))
+    for time, rate, nextRate in zip(times, rates, nextRates):
+        price = time * rate
+        totalPrice += price if (not nextRate or nextRate > price) else nextRate
+    return totalPrice
+
+
+def printMenu():
 
     """ Displays the menu options for the program"""
 
-    options = ["check in",
-               "check out",
+    options = ["check in customer",
+               "check out customer",
+               "check current vehicles",
+               "resend confirmation",
                "create user",
                "delete user",
-               "resend confirmation",
-               "check current vehicles",
                "log out"]
     print("\n===================| MENU |====================")
     print("|                                             |")
     for count, option in enumerate(options, 1):
-        print("|  Press [{}] to {: <30s}|".format(count, option))
+        print("|     Press [{}] to {: <27s}|".format(count, option))
     print("|                                             |")
     print("===============================================")
 
 
-def queryYesNo(question):
+def logOut():
 
-    """Ask a yes/no question via input() and return their answer.
-    "question" is a string that is presented to the user.
-    The "answer" return value is True for "yes" or False for "no".
+    """ this function is only to print 'logging out...' but is used to
+        keep the methodology for the user choosing an option in mainMenu()
+        consistent
     """
 
-    valid = {"yes": True, "y": True, "ye": True,
-             "no": False, "n": False}
-
-    while True:
-        sys.stdout.write(question + "[y/n]")
-        choice = input().lower()
-        if choice in valid:
-            return valid[choice]
-        else:
-            sys.stdout.write("Please respond with 'yes' or 'no' "
-                             "(or 'y' or 'n').\n")
-
-
-def logOut():
     print("logging out...")
 
 
-def startRoutine():
+def mainMenu():
 
-    """Handles all input choices from the parking attendant for parking
-       garage functions and operations"""
+    """ Handles all input choices from the parking attendant for parking
+        garage functions and operations
+    """
 
     dictChoices = {"1": checkIn,
                    "2": checkOut,
-                   "3": createUser,
-                   "4": deleteUser,
-                   "5": resendConfirmation,
-                   "6": currentCars,
+                   "3": currentCars,
+                   "4": resendConfirmation,
+                   "5": createUser,
+                   "6": deleteUser,
                    "7": logOut}
     numSpotsFull = [car for car in allParkingSpots.values() if car.MAC != "0"]
     if len(numSpotsFull) == len(allParkingSpots):
@@ -358,7 +337,7 @@ def startRoutine():
     else:
         vacancy = True
 
-    menu()
+    printMenu()
     userChoice = input("\nPlease make a selection from the MENU: ")
     if userChoice in dictChoices.keys():
         if dictChoices[userChoice] == checkIn and not vacancy:
@@ -368,8 +347,10 @@ def startRoutine():
     else:
         print("that is not a valid option")
     if dictChoices[userChoice] != logOut:
-        if queryYesNo("\nContinue?"):
-            startRoutine()
+        if queryYesNo("\nContinue? "):
+            LCDandKeypad.entranceWrite(" Peters Parking", "  Party Palace")
+            LCDandKeypad.exitWrite(" Peters Parking", "  Party Palace")
+            mainMenu()
         else:
             logOut()
 
@@ -394,13 +375,15 @@ def deleteUser():
 
     """Deletes an authorized user from the database"""
 
-    username = None
-    print("\n'Delete user' selected.")
-    username = input("Enter username to delete: ")
-    userDict.pop(username, None)
-    print(username + "'s account has been deleted.")
-    saveUsers()
-
+    if userDict:
+        username = None
+        print("\n'Delete user' selected.")
+        username = input("Enter username to delete: ")
+        userDict.pop(username, None)
+        print(username + "'s account has been deleted.")
+        saveUsers()
+    else:
+        print("There are no current users")
 
 def saveUsers():
 
@@ -414,10 +397,9 @@ def saveUsers():
 
 def main():
 
-    """Start of program. Initializes information from CSV files to dictionaries
-       on first run."""
-
-    loginAttempts = 3
+    """ Start of program. Initializes information from CSV files to dictionaries
+        on first run.
+    """
 
     if not allParkingSpots:
         fileLoc = '/home/pi/Documents/ENET_Capstone/parking_database.csv'
@@ -432,17 +414,18 @@ def main():
             userReader = csv.reader(userInfile)
             for rows in userReader:
                 userDict[rows[0]] = rows[1]
-    for a in  allParkingSpots.keys():
-        spot = allParkingSpots[a]
-        print(spot.Spot, spot.Confirmation)
-    print(userDict)
+    # REMOVE from final code
+    if userDict:
+        for key, value in userDict.items():
+            print("{} : {}".format(key, value))
 
+    loginAttempts = 3
     if userDict:
         while loginAttempts > 0:
             username = input("Username: ")
-            password = getpass.getpass()
+            password = getpass.getpass("Enter password (input is hidden): ")
             if username in userDict.keys() and userDict[username] == password:
-                startRoutine()
+                mainMenu()
                 break
             else:
                 loginAttempts -= 1
@@ -454,10 +437,14 @@ def main():
         else:
             print("You have exceeded the maximum number of login attempts.")
     else:
-        startRoutine()
-    print("exiting program...")
+        mainMenu()
 
 
 if __name__ == "__main__":
     print("Welcome to Peter's Parking Party Palace")
+    LCDandKeypad.entranceWrite(" Peters Parking", "  Party Palace")
+    LCDandKeypad.exitWrite(" Peters Parking", "  Party Palace")
     main()
+    LCDandKeypad.entranceWrite()
+    LCDandKeypad.exitWrite()
+    print("exiting program...")
