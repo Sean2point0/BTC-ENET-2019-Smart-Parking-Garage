@@ -7,8 +7,8 @@
 #define PARK4_PIN   6
 #define PARK5_PIN   5
 #define PARK6_PIN   3
-#define ENTRANCE    23
-#define EXIT        22
+#define ENTRANCE    12
+#define EXIT        13
 
 #define ONE         7
 #define TWO         19
