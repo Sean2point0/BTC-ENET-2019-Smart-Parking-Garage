@@ -45,7 +45,7 @@ void setup(){
   pinMode(ENTRANCE, OUTPUT);
   pinMode(EXIT, OUTPUT);
   digitalWrite(ENTRANCE, LOW);
-  digitalWrite(EXIT, LOW);
+  digitalWrite(EXIT, HIGH);
   LEDS.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
   LEDS.addLeds<LED_TYPE, PARK1_PIN, COLOR_ORDER>(park[0], PARK_LEDS);
   LEDS.addLeds<LED_TYPE, PARK2_PIN, COLOR_ORDER>(park[1], PARK_LEDS);
@@ -71,6 +71,7 @@ void loop(){
     if(isDigit(customer)){
       int parkSpot = customer - '1';
       digitalWrite(ENTRANCE, HIGH);
+      delay(1000);
       ParkLeds(parkSpot);
       FastLED.show();
       FastLED[0].clearLedData();
@@ -125,8 +126,10 @@ void ReturnLeds(int spaceNum){
     FastLED.delay(LEDDELAY);
     if (x == (NUM_LEDS - 68)){
       digitalWrite(EXIT, LOW);
+      delay(1000);
     }else if (x == (NUM_LEDS - 50)){
-      digitalWrite(EXIT, LOW);
+      digitalWrite(EXIT, HIGH);
+      delay(1000);
     }
   }
 }
