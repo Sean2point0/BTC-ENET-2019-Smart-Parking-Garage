@@ -1,8 +1,8 @@
 #include<Servo.h>
 
 //Definitions for Servo positions in degrees
-#define OPENEXIT 180
-#define CLOSEDEXIT 90
+#define CLOSEDEXIT 180
+#define OPENEXIT 90
 #define OPENENTRANCE 180
 #define CLOSEDENTRANCE 100
 
@@ -29,7 +29,7 @@ exitServo.attach(EXITSERVO); //Attaches the EXITSERVO to its defined pin
 
 void loop() {
 entranceState = (digitalRead(ENTRANCEREAD)==HIGH) ? OPENENTRANCE : CLOSEDENTRANCE; //Checks the ENTRANCEREAD pin, if high open, if low close
-exitState = (digitalRead(EXITREAD)==HIGH) ? OPENEXIT : CLOSEDEXIT; //Checks the EXITREAD pin, if high open, if low close
+exitState = (digitalRead(EXITREAD)==HIGH) ? CLOSEDEXIT : OPENEXIT; //Checks the EXITREAD pin, if high open, if low close
 entranceServo.write(entranceState); //Writes the entrance servo to its dictated state
 exitServo.write(exitState); //Writes the exit servo to its dictated state
 
