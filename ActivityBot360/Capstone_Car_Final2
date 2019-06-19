@@ -76,7 +76,7 @@ void RC_check(){                     //Function for reading the time constants
   while(x <= 1){                     //Runs twice
   high(Ptran[x]);                    //Sets pin to high
   pause(1);                          //Pauses for 1 millisecond
-  rcCalc[x] = rc_time(Ptran[x], 1);  //Reads the time constant for Left Phototransistor
+  rcCalc[x] = rc_time(Ptran[x], 1);  //Reads the time constant for current Phototransistor
   x++;                               //Increments x by one
   }  
 }
