@@ -1,0 +1,96 @@
+#include "simpletools.h"
+#include "abdrive360.h"
+#include "fdserial.h"
+
+//Defines pins for bluetooth communication
+#define rxpin 8
+#define txpin 7
+#define baudRate 9600 //sets baud rate for the bluetooth module
+
+//Light Tracking
+  //Base values included with program given by Parallax
+    volatile int Ptran[2] = {9,5}; //left phototransistor, right phototransistor
+    volatile float rcCalc[2];      //Left time constant, Right time constant
+    
+    volatile int doubleBaseSpeed, speedLeft, speedRight, stop = 0;
+    volatile int tickDelayF = 5000, tickDelayB = 1000; //Delays for timeout
+    int Pleft = 0, Pright = 0; //Values to check if current tick count is the same as previous
+    float ndiff;               //Used to calculate speed difference between inside and outside wheels
+
+  //Values used for proportional speed
+    volatile int baseSpeed = 43; //Base speed should be between 43 and 50 @ 125 LED delay
+    
+    //Values used for bluetooth
+    volatile int received; //Stores received character as an integer
+    fdserial *bluetooth;   //Creates fdserial structure labeled bluetooth
+    
+    //Core labels
+    int *tickCore; //Stores core number used for tick counter
+    
+  //Function declaraion
+  void tickCounter();
+  void RC_check();
+
+int main(){
+  bluetooth = fdserial_open(rxpin, txpin, 0, baudRate); //rx, tx, mode, baud rate
+  fdserial_rxFlush(bluetooth);                          //Removes any characters stored in the serial buffer
+  doubleBaseSpeed = baseSpeed*2;                        //Calculates double the base speed for proportional control use
+  
+  while(1)
+  {
+  received = fdserial_rxChar(bluetooth);        //Waits until a character is available from the Raspberry Pi
+  if(received == 'g'){                          //If character is 'g', then car follows light to parking spot
+    tickCore = cog_run(tickCounter, 128);       //Runs the tick counter 
+    pause(20);                                  //Pauses for 20 milliseconds
+    while(stop == 0){
+    RC_check();                                 //Function for checking the phototransistors on the car
+    
+    ndiff = doubleBaseSpeed * rcCalc[1] / (rcCalc[1] + rcCalc[0]) - baseSpeed; //Creates a ratio used to determine robot direction
+    speedLeft = baseSpeed; speedRight = baseSpeed;                             //Resets the wheel speed for readjustment later
+    
+    if((rcCalc[0] > 150)&&(rcCalc[1] > 150)){ //Detects if there light that is intense enough to follow
+      drive_speed(0,0);                       //Stops the car
+    }
+    
+    else{                                 //If there is a bright enough light close by 
+      if(ndiff >= 0) speedLeft -= ndiff;  //Sets the left servo drive speed if the light is brighter to the Parallax's right
+      else speedRight += ndiff;           //Sets the right servo drive speed if the light is brighter to the Parallax's left
+      drive_speed(speedLeft, speedRight); //Sets the servos to drive at the adjusted speed.
+    }    
+    }
+    fdserial_txChar(bluetooth, 'd'); //Sends to Raspberry Pi to designate finishing
+    cog_end(tickCore);               //Ends the tick counter program
+    stop = 0;                        //Resets the flag for stopping the robot
+    drive_speed(0, 0);               //Stops the car
+    }
+  else if(received == 'b'){           //Reverses the car if a b character is sent
+     drive_goto(-85,-85);             //Reverses the car 85 ticks
+     pause(3000);                     //Pauses for 3 seconds
+     fdserial_txChar(bluetooth, 'd'); //Sends a character to designate finishing
+  }    
+  }  
+}
+
+void RC_check(){                     //Function for reading the time constants
+  int x = 0;
+  while(x <= 1){                     //Runs twice
+  high(Ptran[x]);                    //Sets pin to high
+  pause(1);                          //Pauses for 1 millisecond
+  rcCalc[x] = rc_time(Ptran[x], 1);  //Reads the time constant for Left Phototransistor
+  x++;                               //Increments x by one
+  }  
+}
+
+void tickCounter(){
+  int Tright, Tleft;                 //Initializes integers Tright and Tleft
+   while(1){
+   pause(tickDelayF);                         //Pauses for designated amount of time
+   drive_getTicks(&Tright, &Tleft);           //Gets the total ticks traveled from servo
+   if((Tright != Pright)||(Tleft != Pleft)){  //Checks to see if the servos have traveled the same amount of ticks as the last check
+      Pright = Tright; Pleft = Tleft;         //Writes the current amount of ticks travelled over the previous ticks travelled
+      stop = 0;                               //Sets the stop flag to zero
+   }
+   else
+    stop = 1;   //Sets the stop flag to 1 if the amount of ticks travelled is the same as the previous check, stopping the light following
+  }
+}
