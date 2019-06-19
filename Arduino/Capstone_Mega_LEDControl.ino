@@ -117,25 +117,27 @@ void ParkLeds(int spaceNum){
 }
 
 void ReturnLeds(int spaceNum){
-  for(int x = LEDCountToSpace[spaceNum] - 4; x <= NUM_LEDS; x++){
+  for(int x = LEDCountToSpace[spaceNum] - 4; x < NUM_LEDS; x++){
     if(x>=6){
       leds[x-6].setRGB(0, 0, 0);
     }
     leds[x].setRGB(255,255,255);
     FastLED[0].showLeds(BRIGHTNESS);
     FastLED.delay(LEDDELAY);
+    if (spaceNum == 0 && x ==18){
+      digitalWrite(ENTRANCE, LOW);
+    }
     if (x == (NUM_LEDS - 68)){
       digitalWrite(EXIT, LOW);
       delay(1000);
     }else if (x == (NUM_LEDS - 50)){
       digitalWrite(EXIT, HIGH);
-      delay(1000);
     }
   }
 }
 
 void Space(int spaceNum){
-  for(int x = PARK_LEDS; x >= 5; x--){
+  for(int x = PARK_LEDS - 1; x >= 5; x--){
     if(x<=18){
       park[spaceNum][x+6].setRGB(0, 0, 0);
     }
@@ -151,8 +153,9 @@ void Space(int spaceNum){
 
 void SpaceReturn(int spaceNum){
   int count;
-  if (spaceNum == 1){
+  if (spaceNum == 0){
     count = SPACE1_LEDS;
+    digitalWrite(ENTRANCE, HIGH);
   }else{
     count = PARK_LEDS;
   }
