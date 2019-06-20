@@ -18,7 +18,6 @@
 #define SIX         137
 
 #define NUM_LEDS    228
-#define SPACE1_LEDS 20
 #define PARK_LEDS   24
 #define LEDDELAY    150
 #define BRIGHTNESS  64            //max is 255
@@ -152,14 +151,10 @@ void Space(int spaceNum){
 }
 
 void SpaceReturn(int spaceNum){
-  int count;
   if (spaceNum == 0){
-    count = SPACE1_LEDS;
     digitalWrite(ENTRANCE, HIGH);
-  }else{
-    count = PARK_LEDS;
   }
-  for(int x = 0; x < count; x++){
+  for(int x = 0; x < PARK_LEDS; x++){
     if(x>=6){
       park[spaceNum][x-6].setRGB(0, 0, 0);
     }
