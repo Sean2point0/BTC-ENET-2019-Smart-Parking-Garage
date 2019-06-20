@@ -8,3 +8,6 @@ The Self-Parking Car Garage is a scaled-down conceptual design for a single-atte
 - The garage must be capable of storing multiple vehicles.
 
 Using the amount of creative license we were given in realizing these goals, we decided that we would achieve automation through a combination of bluetooth communication and light-guided control. This design choice afforded the opportunity to accommodate multiple vehicles at once. Taking advantage of the optional attendant, we decided to include a kiosk with a control console that is capable of managing client-side tasks.
+
+![picture of parking garage](https://raw.githubusercontent.com/Sean2point0/BTC-ENET-2019-Smart-Parking-Garage/master/IMG_20190618_171329.jpg)
+
